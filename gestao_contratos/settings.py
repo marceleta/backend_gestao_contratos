@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -30,6 +31,12 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),  # Define a duração do token de acesso para 24 horas
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+}
 
 #Classe customizada de usuarios do sistema:
 AUTH_USER_MODEL = 'usuario.Usuario'

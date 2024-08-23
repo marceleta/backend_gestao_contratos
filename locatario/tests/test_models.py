@@ -1,13 +1,16 @@
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
-from rest_framework.authtoken.models import Token
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.urls import reverse
 from core.models import Estado, Telefone
 from locatario.models import Locatario
 from django.utils.dateparse import parse_date
 from django.contrib.contenttypes.models import ContentType
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
+
+
+User = get_user_model()
 
 class LocatarioModelTest(TestCase):
 
@@ -61,10 +64,16 @@ class LocatarioModelTest(TestCase):
 class LocatarioAPITestCase(APITestCase):
 
     def setUp(self):
-        # Criar usuário para autenticação
+         # Criar usuário para autenticação
         self.user = User.objects.create_user(username='testuser', password='testpass')
-        self.token = Token.objects.create(user=self.user)
-        self.client.credentials(HTTP_AUTHORIZATION='Token ' + self.user.auth_token.key)
+
+        # Gerar o token JWT
+        refresh = RefreshToken.for_user(self.user)
+        self.access_token = str(refresh.access_token)
+
+        # Configurar o cliente com o token JWT
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer ' + self.access_token)
+        #print(f"Token: {self.access_token}")
 
         # Criar Estado
         self.estado = Estado.objects.create(sigla='SP', nome='São Paulo')
@@ -91,7 +100,7 @@ class LocatarioAPITestCase(APITestCase):
             ]
         }
         response = self.client.post(url, data, format='json')
-        #print(response.data)
+        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Locatario.objects.count(), 1)
         self.assertEqual(Telefone.objects.count(), 2)
@@ -176,3 +185,41 @@ class LocatarioAPITestCase(APITestCase):
             content_type=content_type, object_id=locatario.id).count()
         
         self.assertEqual(telefone_count, 2)
+
+    def test_pagination_of_locatarios(self):
+        # Criar vários locatários para testar a paginação
+        for i in range(15):
+            Locatario.objects.create(
+                nome=f'Locatario {i+1}',
+                cpf=f'{i+1:03d}.456.789-0{i+1:01d}',
+                identidade=f'{i+1:02d}3456789',
+                orgao_expeditor='SSP-SP',
+                email=f'locatario{i+1}@email.com',
+                endereco=f'Rua {i+1}, 123',
+                bairro='Centro',
+                cidade='Cidade Exemplo',
+                estado=self.estado,
+                cep='01000-000',
+                nacionalidade='Brasileiro',
+                estado_civil='Solteiro(a)',
+                data_nascimento='1990-01-01'
+            )
+
+        # Defina a URL do endpoint de locatários
+        url = reverse('locatario-list')
+
+        # Faça uma requisição GET para a primeira página
+        response = self.client.get(url, {'page': 1}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['results']), 10)  # Assumindo que a página tem 10 itens por padrão
+
+        # Verifique se há uma próxima página
+        self.assertIsNotNone(response.data['next'])
+
+        # Faça uma requisição GET para a segunda página
+        response = self.client.get(url, {'page': 2}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['results']), 5)  # Os 5 locatários restantes
+
+        # Verifique se a segunda página é a última
+        self.assertIsNone(response.data['next'])

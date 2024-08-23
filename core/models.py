@@ -60,7 +60,7 @@ class Pessoa(models.Model):
     preferencia_comunicacao = models.CharField(
         max_length=50,
         choices=[('Email', 'Email'), ('Telefone', 'Telefone'), ('WhatsApp', 'WhatsApp')],
-        default='Email'
+        default='Whatsapp'
     )
 
     telefones = GenericRelation(Telefone)
