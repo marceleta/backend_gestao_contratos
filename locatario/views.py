@@ -11,7 +11,7 @@ class LocatarioViewSet(viewsets.ModelViewSet):
     Acesso restrito a usuários autenticados.
     """
     
-    queryset = Locatario.objects.prefetch_related('telefones').order_by('nome').all()  # Otimização do queryset
+    queryset = Locatario.objects.all()
     serializer_class = LocatarioSerializer
     permission_classes = [permissions.IsAuthenticated] # Permissões de acesso
 

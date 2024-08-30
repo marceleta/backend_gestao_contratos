@@ -24,12 +24,12 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('admin/', admin.site.urls),  # Rota do Django Admin
-    path('api/usuario/v1/', include('usuario.urls')),
+    path('api/v1/usuario/', include('usuario.urls')),
     path('api/docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),  # Documentação Swagger
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh', TokenRefreshView.as_view(), name='token_refresh'),
-    path('api/proprietario/v1/', include('proprietario.urls')),  # Inclua as rotas do app proprietario
-    path('api/locatario/v1/', include('locatario.urls')),
-    path('api/estado/v1/', include('core.urls')), # inclui a rotas para os estados
-    path('api/procuracao/v1/', include('procuracao.urls')) # inclui rotas para procuracao
+    path('api/v1/locatario', include('locatario.urls')),
+    path('api/v1/locador', include('locador.urls')),
+    path('api/v1/', include('core.urls')), # inclui a rotas para os estados
+    path('api/v1/procuracao/', include('procuracao.urls')) # inclui rotas para procuracao
 ]

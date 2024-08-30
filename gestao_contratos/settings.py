@@ -38,6 +38,7 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
 }
 
+
 #Classe customizada de usuarios do sistema:
 AUTH_USER_MODEL = 'usuario.Usuario'
 
@@ -56,9 +57,9 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'core',
-    'proprietario',
     'procuracao',
     'locatario',
+    'locador',
     'usuario',
 ]
 
@@ -121,6 +122,13 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+}
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+    }
 }
 
 
