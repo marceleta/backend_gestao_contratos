@@ -141,12 +141,6 @@ class PessoaJuridicaSerializer(serializers.ModelSerializer):
         return instance
 
 
-
-        
-
-    
-
-
 class RepresentanteSerializer(serializers.ModelSerializer):
     
     class Meta:

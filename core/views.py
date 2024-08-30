@@ -1,9 +1,9 @@
 from rest_framework import viewsets, permissions, pagination
-from .models import Estado
+from .models import Estado, Representante
 from .serializers import EstadoSerializer
 from rest_framework.permissions import IsAuthenticated
 from .models import PessoaFisica, PessoaJuridica
-from .serializers import PessoaFisicaSerializer, PessoaJuridicaSerializer
+from .serializers import PessoaFisicaSerializer, PessoaJuridicaSerializer, RepresentanteSerializer
 from rest_framework.response import Response
 from rest_framework import status
 from django.core.cache import cache
@@ -211,3 +211,42 @@ class ClienteViewSet(viewsets.GenericViewSet):
         else:
             return Response({"error": "Tipo de pessoa não especificado ou inválido. Use 'fisica' ou 'juridica'."},
                             status=status.HTTP_400_BAD_REQUEST)
+        
+
+class RepresentanteViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gerenciar Representantes.
+
+    Este ViewSet permite realizar operações CRUD para o modelo Representante.
+    """
+    queryset = Representante.objects.all()
+    serializer_class = RepresentanteSerializer
+    permission_classes = [IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        # Criação personalizada do Representante
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        representante = serializer.save()
+        return Response(
+            RepresentanteSerializer(representante).data,
+            status=status.HTTP_201_CREATED
+        )
+
+    def update(self, request, *args, **kwargs):
+        # Atualização personalizada do Representante
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        representante = serializer.save()
+        return Response(
+            RepresentanteSerializer(representante).data,
+            status=status.HTTP_200_OK
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        # Deleção do Representante
+        instance = self.get_object()
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

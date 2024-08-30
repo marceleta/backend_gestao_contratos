@@ -75,7 +75,7 @@ class RepresentanteSerializerTestCase(TestCase):
     def test_read_representante(self):
         serializer = RepresentanteSerializer(self.representante)
         data = serializer.data
-        print(data)
+        #print(data)
         self.assertEqual(data['pessoa_fisica'], self.pessoa_fisica.id)
         self.assertEqual(data['pessoa_juridica'], self.pessoa_juridica.id)
         self.assertEqual(data['cargo'], 'Gerente')
@@ -97,5 +97,71 @@ class RepresentanteSerializerTestCase(TestCase):
         self.representante.delete()
         with self.assertRaises(Representante.DoesNotExist):
             Representante.objects.get(id=representante_id)
+
+
+    def test_update_pessoa_fisica_no_representante(self):
+        # Cria uma nova pessoa física
+        nova_pessoa_fisica = PessoaFisica.objects.create(
+            nome='Carlos Pereira',
+            email='carlos@example.com',
+            telefone='99999-9999',
+            endereco='Rua C',
+            bairro='Jardim',
+            cidade='Rio de Janeiro',
+            estado=self.estado_rj,
+            cep='87654-321',
+            cpf='987.654.321-00',
+            identidade='RJ-98.765.432',
+            orgao_expeditor='SSP-RJ',
+            data_nascimento='1975-02-02',
+            estado_civil='Casado(a)',
+            nacionalidade='Brasileiro'
+        )
+
+        data = {
+            'pessoa_fisica': nova_pessoa_fisica.id,
+            'pessoa_juridica': self.representante.pessoa_juridica.id,
+            'cargo': self.representante.cargo,
+            'nivel_autoridade': self.representante.nivel_autoridade
+        }
+
+        serializer = RepresentanteSerializer(self.representante, data=data, partial=True)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        representante_atualizado = serializer.save()
+
+        self.assertEqual(representante_atualizado.pessoa_fisica, nova_pessoa_fisica)
+
+    def test_update_pessoa_juridica_no_representante(self):
+        # Cria uma nova pessoa jurídica
+        nova_pessoa_juridica = PessoaJuridica.objects.create(
+            nome='Nova Empresa Ltda',
+            email='contato@novaempresa.com',
+            telefone='88888-8888',
+            endereco='Av. Nova',
+            bairro='Bairro Novo',
+            cidade='São Paulo',
+            estado=self.estado_sp,
+            cep='65432-987',
+            cnpj='98.765.432/0001-00',
+            data_fundacao='2010-03-03',
+            nome_fantasia='Nova Fantasia Ltda',
+            inscricao_estadual='987654321',
+            natureza_juridica='Sociedade Limitada',
+            atividade_principal_cnae='70.20-4-00'
+        )
+
+        data = {
+            'pessoa_fisica': self.representante.pessoa_fisica.id,
+            'pessoa_juridica': nova_pessoa_juridica.id,
+            'cargo': self.representante.cargo,
+            'nivel_autoridade': self.representante.nivel_autoridade
+        }
+
+        serializer = RepresentanteSerializer(self.representante, data=data, partial=True)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        representante_atualizado = serializer.save()
+
+        self.assertEqual(representante_atualizado.pessoa_juridica, nova_pessoa_juridica)
+
 
 

@@ -1,10 +1,11 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ClienteViewSet, EstadoViewSet
+from .views import ClienteViewSet, EstadoViewSet, RepresentanteViewSet
 
 # Definindo o router para criar automaticamente as rotas padrão para EstadoViewSet
 router = DefaultRouter()
 router.register(r'estados', EstadoViewSet, basename='estado')
+router.register(r'representantes', RepresentanteViewSet, basename='representante')
 
 # Definindo as rotas detalhadas para o ClienteViewSet
 cliente_list = ClienteViewSet.as_view({
