@@ -34,15 +34,48 @@ class DocumentoPessoaJuridica(Documento):
 
 
 class DocumentoImovel(Documento):
+    TIPO_DOCUMENTO_CHOICES = [
+        ('escritura', 'Escritura Pública'),
+        ('matricula', 'Certidão de Matrícula'),
+        ('cnd', 'Certidão Negativa de Débitos'),
+        ('iptu', 'Certidão Negativa de IPTU'),
+        ('condominio', 'Certidão Negativa de Débitos Condominiais'),
+        ('onus_reais', 'Certidão de Ônus Reais'),
+        ('habitese', 'Habite-se'),
+        ('licenca_construcao', 'Licença de Construção'),
+        ('licenca_ambiental', 'Licença Ambiental'),
+        ('alvara_funcionamento', 'Alvará de Funcionamento'),
+    ]
     imovel = models.ForeignKey('imovel.Imovel', on_delete=models.CASCADE, related_name='documentos')
-    tipo_documento = models.CharField(max_length=50, choices=[('matricula', 'Matrícula'), 
-                                                              ('cert_negativa_iptu', 'Certidão Negativa IPTU'),
-                                                              ('cert_negativa_condominio', 'Certidão Negativa Condomínio'),
-                                                              ('cert_negativa_deb_trabalhistas', 'Certidão Negativa Débitos Trabalhistas'),
-                                                              ('recibo_itbi', 'Recibo ITBI'),
-                                                              ('habitese', 'Habite-se'),
-                                                              ('escritura_publica', 'Escritura Pública')])
+    tipo_documento = models.CharField(max_length=50, choices=TIPO_DOCUMENTO_CHOICES)
 
     def __str__(self):
-        return f"{self.tipo_documento} - {self.imovel.descricao}"
+        return f"{self.get_tipo_documento_display()} - {self.imovel.nome}"
+    
+
+class FotosVideoImovel(Documento):
+    TIPO_FOTOVIDEO_CHOICES = [
+        ('foto_profissional', 'Foto Profissional'),
+        ('foto_drone', 'Foto Aérea com Drone'),
+        ('foto_360', 'Imagem 360º'),
+        ('planta_baixa', 'Imagem de Planta Baixa'),
+        ('foto_ambientada', 'Foto Ambientada'),
+        ('video_tour', 'Vídeo Tour'),
+        ('tour_virtual_360', 'Tour Virtual 360º'),
+        ('video_drone', 'Vídeo com Drone'),
+        ('video_obra', 'Vídeo de Andamento de Obras'),
+        ('depoimento_cliente', 'Depoimento de Cliente'),
+    ]
+
+    imovel = models.ForeignKey('imovel.Imovel', on_delete=models.CASCADE, related_name='midia')
+    tipo_midia = models.CharField(max_length=50, choices=TIPO_FOTOVIDEO_CHOICES)
+    FORMATO_CHOICES = [
+        ('imagem', 'Imagem'),
+        ('video', 'Vídeo'),
+    ]
+    formato = models.CharField(max_length=10, choices=FORMATO_CHOICES, default='Imagem')
+
+
+    def __str__(self):
+        return f"{self.get_tipo_midia_display()} - {self.imovel.nome}"
 

@@ -35,7 +35,7 @@ class Lead(models.Model):
 
     nome = models.CharField(max_length=255)
     contato = models.CharField(max_length=255)
-    email = models.EmailField()
+    email = models.EmailField(null=True)
     data_criacao = models.DateTimeField(auto_now_add=True)
     etapa_kanban = models.CharField(max_length=50, choices=ETAPA_CHOICES, default=ETAPA_NOVO)
     avaliacao = models.CharField(max_length=50, choices=AVALIACAO_CHOICES, 
