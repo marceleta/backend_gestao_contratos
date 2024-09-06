@@ -33,4 +33,5 @@ urlpatterns = [
     path('api/v1/', include('core.urls')), # inclui a rotas para os estados
     path('api/v1/', include('procuracao.urls')), # inclui rotas para procuracao
     path('api/v1/', include('documentacao.urls')),  # Inclui as URLs do app documentacao
+    path('api/v1/', include('imovel.urls'))
 ]

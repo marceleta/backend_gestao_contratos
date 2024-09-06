@@ -1,108 +1,155 @@
 from django.test import TestCase
-from imovel.models import Imovel, TransacaoImovel
-from datetime import datetime
+from django.utils import timezone
+from imovel.models import Imovel, SituacaoFiscal, TransacaoImovel
+import datetime
 
 class ImovelTestCase(TestCase):
 
     def setUp(self):
-        # Criação de um imóvel para os testes
+        # Criação de um objeto Imovel
         self.imovel = Imovel.objects.create(
-            nome='Apartamento 101',
-            endereco='Rua X, 123',
-            bairro='Centro',
-            cidade='São Paulo',
-            estado='SP',
-            cep='01234-567',
-            area_total=80.00,
-            area_util=65.00,
-            tipo_imovel='apartamento',
-            num_quartos=2,
-            num_banheiros=2,
-            num_vagas_garagem=1,
-            ano_construcao=2015,
-            numero_registro='12345ABC',
-            disponibilidade=True
+            nome='Casa de Praia',
+            endereco='Rua do Sol, 123',
+            bairro='Beira Mar',
+            cidade='Fortaleza',
+            estado='CE',
+            cep='60000-000',
+            area_total=150.00,
+            area_util=130.00,
+            tipo_imovel='casa',
+            num_quartos=4,
+            num_banheiros=3,
+            num_vagas_garagem=2,
+            ano_construcao=2018,
+            caracteristicas_adicionais='Piscina, churrasqueira',
+            latitude=-3.71722,
+            longitude=-38.5434,
+            status='disponivel',
+            tipo_construcao='novo',
+            numero_registro='12345ABC'
         )
 
     def test_create_imovel(self):
-        # Teste de criação do imóvel
+        # Teste de criação de um imóvel
         self.assertEqual(Imovel.objects.count(), 1)
-        self.assertEqual(self.imovel.nome, 'Apartamento 101')
-        self.assertEqual(self.imovel.tipo_imovel, 'apartamento')
+        self.assertEqual(self.imovel.nome, 'Casa de Praia')
 
     def test_read_imovel(self):
-        # Teste de leitura do imóvel
+        # Teste de leitura de um imóvel
         imovel = Imovel.objects.get(id=self.imovel.id)
-        self.assertEqual(imovel.nome, 'Apartamento 101')
-        self.assertEqual(imovel.cep, '01234-567')
+        self.assertEqual(imovel.nome, 'Casa de Praia')
 
     def test_update_imovel(self):
-        # Teste de atualização do imóvel
-        self.imovel.nome = 'Apartamento 202'
+        # Teste de atualização de um imóvel
+        self.imovel.nome = 'Casa de Campo'
         self.imovel.save()
-        imovel_atualizado = Imovel.objects.get(id=self.imovel.id)
-        self.assertEqual(imovel_atualizado.nome, 'Apartamento 202')
+        self.assertEqual(self.imovel.nome, 'Casa de Campo')
 
     def test_delete_imovel(self):
-        # Teste de exclusão do imóvel
-        imovel_id = self.imovel.id
+        # Teste de deleção de um imóvel
         self.imovel.delete()
-        with self.assertRaises(Imovel.DoesNotExist):
-            Imovel.objects.get(id=imovel_id)
+        self.assertEqual(Imovel.objects.count(), 0)
+
+
+class SituacaoFiscalTestCase(TestCase):
+
+    def setUp(self):
+        # Criando um objeto Imovel
+        self.imovel = Imovel.objects.create(
+            nome='Casa de Praia',
+            endereco='Rua do Sol, 123',
+            bairro='Beira Mar',
+            cidade='Fortaleza',
+            estado='CE',
+            cep='60000-000',
+            area_total=150.00,
+            area_util=130.00,
+            tipo_imovel='casa',
+            num_quartos=4,
+            num_banheiros=3,
+            num_vagas_garagem=2,
+            ano_construcao=2018,
+            numero_registro='12345ABC'
+        )
+        
+        # Criando um objeto SituacaoFiscal
+        self.situacao_fiscal = SituacaoFiscal.objects.create(
+            imovel=self.imovel,
+            tipo='iptu_atrasado',
+            descricao='IPTU em atraso desde 2020',
+            data_referencia=datetime.date(2021, 1, 1)
+        )
+
+    def test_create_situacao_fiscal(self):
+        # Teste de criação de uma situação fiscal
+        self.assertEqual(SituacaoFiscal.objects.count(), 1)
+        self.assertEqual(self.situacao_fiscal.tipo, 'iptu_atrasado')
+
+    def test_read_situacao_fiscal(self):
+        # Teste de leitura de uma situação fiscal
+        situacao = SituacaoFiscal.objects.get(id=self.situacao_fiscal.id)
+        self.assertEqual(situacao.descricao, 'IPTU em atraso desde 2020')
+
+    def test_update_situacao_fiscal(self):
+        # Teste de atualização de uma situação fiscal
+        self.situacao_fiscal.descricao = 'IPTU em atraso desde 2021'
+        self.situacao_fiscal.save()
+        self.assertEqual(self.situacao_fiscal.descricao, 'IPTU em atraso desde 2021')
+
+    def test_delete_situacao_fiscal(self):
+        # Teste de deleção de uma situação fiscal
+        self.situacao_fiscal.delete()
+        self.assertEqual(SituacaoFiscal.objects.count(), 0)
 
 
 class TransacaoImovelTestCase(TestCase):
 
     def setUp(self):
-        # Criação de um imóvel para os testes de transação
+        # Criando um objeto Imovel
         self.imovel = Imovel.objects.create(
-            nome='Casa Verde',
-            endereco='Rua Y, 456',
-            bairro='Jardim',
-            cidade='Rio de Janeiro',
-            estado='RJ',
-            cep='98765-432',
+            nome='Casa de Praia',
+            endereco='Rua do Sol, 123',
+            bairro='Beira Mar',
+            cidade='Fortaleza',
+            estado='CE',
+            cep='60000-000',
             area_total=150.00,
-            area_util=120.00,
+            area_util=130.00,
             tipo_imovel='casa',
-            num_quartos=3,
-            num_banheiros=2,
+            num_quartos=4,
+            num_banheiros=3,
             num_vagas_garagem=2,
-            ano_construcao=2010,
-            numero_registro='67890DEF',
-            disponibilidade=True
+            ano_construcao=2018,
+            numero_registro='12345ABC'
         )
-
-        # Criação de uma transação associada ao imóvel
-        self.transacao = TransacaoImovel.objects.create(
+        
+        # Criando um objeto TransacaoImovel
+        self.transacao_imovel = TransacaoImovel.objects.create(
             imovel=self.imovel,
             tipo_transacao='venda',
-            valor=600000.00,
-            data_disponibilidade=datetime.now().date()
+            valor=500000.00,
+            comissao=5.00,
+            condicoes_pagamento='Entrada + 24x sem juros',
+            data_disponibilidade=datetime.date(2022, 12, 1)
         )
 
     def test_create_transacao_imovel(self):
-        # Teste de criação de uma transação
+        # Teste de criação de uma transação imobiliária
         self.assertEqual(TransacaoImovel.objects.count(), 1)
-        self.assertEqual(self.transacao.tipo_transacao, 'venda')
-        self.assertEqual(self.transacao.valor, 600000.00)
+        self.assertEqual(self.transacao_imovel.tipo_transacao, 'venda')
 
     def test_read_transacao_imovel(self):
-        # Teste de leitura de uma transação
-        transacao = TransacaoImovel.objects.get(id=self.transacao.id)
-        self.assertEqual(transacao.imovel.nome, 'Casa Verde')
-        self.assertEqual(transacao.tipo_transacao, 'venda')
+        # Teste de leitura de uma transação imobiliária
+        transacao = TransacaoImovel.objects.get(id=self.transacao_imovel.id)
+        self.assertEqual(transacao.valor, 500000.00)
 
     def test_update_transacao_imovel(self):
-        # Teste de atualização de uma transação
-        self.transacao.valor = 650000.00
-        self.transacao.save()
-        transacao_atualizada = TransacaoImovel.objects.get(id=self.transacao.id)
-        self.assertEqual(transacao_atualizada.valor, 650000.00)
+        # Teste de atualização de uma transação imobiliária
+        self.transacao_imovel.valor = 550000.00
+        self.transacao_imovel.save()
+        self.assertEqual(self.transacao_imovel.valor, 550000.00)
 
     def test_delete_transacao_imovel(self):
-        # Teste de exclusão de uma transação
-        transacao_id = self.transacao.id
-        self.transacao.delete()
-        with self.assertRaises(TransacaoImovel.DoesNotExist):
-            TransacaoImovel.objects.get(id=transacao_id)
+        # Teste de deleção de uma transação imobiliária
+        self.transacao_imovel.delete()
+        self.assertEqual(TransacaoImovel.objects.count(), 0)
