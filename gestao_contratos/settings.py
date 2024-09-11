@@ -62,9 +62,9 @@ INSTALLED_APPS = [
     'locatario',
     'locador',
     'usuario',
-    'pipeline',
     'imovel',
-    'documentacao'
+    'documentacao',
+    'kanban'
 ]
 
 MIDDLEWARE = [
@@ -161,6 +161,7 @@ AUTH_PASSWORD_VALIDATORS = [
 LANGUAGE_CODE = 'pt-br'
 
 TIME_ZONE = 'America/Sao_Paulo'
+USE_TZ = True
 
 MEDI_URL = '/media/'
 

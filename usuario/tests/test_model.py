@@ -40,8 +40,11 @@ class UsuarioTestCase(TestCase):
             'username': 'user1_updated',
             'email': 'user1_updated@example.com'
         }
+        #print('ID usuario: '+str(self.regular_user.id))
         url = reverse('usuario-detail', args=[self.regular_user.id])
+        #print(f"Generated URL: {url}")
         response = self.client.put(url, data)
+        #print(response.data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.regular_user.refresh_from_db()
         self.assertEqual(self.regular_user.username, 'user1_updated')
@@ -63,7 +66,7 @@ class UsuarioTestCase(TestCase):
             'password': 'forbiddenpass'
         }
         response = self.client.post(reverse('usuario-list'), data)
-        print('response.data: '+str(response.data))
+        #print('response.data: '+str(response.data))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         
         url = reverse('usuario-detail', args=[self.admin_user.id])

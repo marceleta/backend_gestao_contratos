@@ -4,7 +4,7 @@ from .views import UsuarioViewSet
 
 router = DefaultRouter()
 
-router.register(r'usuarios', UsuarioViewSet, basename='usuario')
+router.register(r'perfil', UsuarioViewSet, basename='usuario')
 
 urlpatterns = [
     path('', include(router.urls))
