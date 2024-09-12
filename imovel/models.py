@@ -92,11 +92,16 @@ class Imovel(models.Model):
         
     cep = models.CharField(max_length=10, validators=[validate_cep], default="")
 
+    def get_tipos_transacao(self):
+        return list(self.transacoes.values_list('tipo_transacao', flat=True))
+
+    
     def __str__(self):
         return f"{self.nome} - {self.cidade}/{self.estado}"
     
 
 class TransacaoImovel(models.Model):
+    
     TIPO_TRANSACAO_CHOICES = [
         ('venda', 'Venda'),
         ('aluguel', 'Aluguel'),
@@ -107,9 +112,7 @@ class TransacaoImovel(models.Model):
     ]
 
     imovel = models.ForeignKey(Imovel, on_delete=models.CASCADE, related_name='transacoes')
-
     comissao = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, help_text="Comissão em %")
-
     tipo_transacao = models.CharField(max_length=20, choices=TIPO_TRANSACAO_CHOICES)
     valor = models.DecimalField(max_digits=10, decimal_places=2)
     condicoes_pagamento = models.TextField(null=True, blank=True, help_text="Detalhes sobre financiamento, entrada, parcelamento")
@@ -117,6 +120,78 @@ class TransacaoImovel(models.Model):
 
     def __str__(self):
         return f"{self.imovel.nome} - {self.tipo_transacao}"
+
+    def get_formas_pagamento(self):
+        """ Retorna as formas de pagamento específicas para cada tipo de transação. """
+        match self.tipo_transacao:
+            case 'venda' | 'financiamento' | 'permuta':
+                return [
+                    ('financiamento_bancario', 'Financiamento Bancário'),
+                    ('consorcio', 'Consórcio'),
+                    ('pagamento_a_vista', 'Pagamento à Vista'),
+                    ('entrada_mais_parcelas', 'Entrada + Parcelas Diretas com o Vendedor'),
+                    ('fgts', 'Uso do FGTS'),
+                    ('bitcoin_ou_criptomoedas', 'Bitcoin ou Criptomoedas'),
+                    ('carta_de_credito', 'Carta de Crédito')
+                ]
+            case 'aluguel' | 'arrendamento' | 'leasing':
+                return [
+                    ('boleto_bancario', 'Boleto Bancário'),
+                    ('transferencia_bancaria', 'Transferência Bancária'),
+                    ('pix', 'PIX'),
+                    ('cartao_credito', 'Cartão de Crédito'),
+                    ('debito_automatico', 'Débito Automático'),
+                    ('fiador', 'Fiador'),
+                    ('seguro_fianca', 'Seguro Fiança'),
+                    ('titulo_de_capitalizacao', 'Título de Capitalização'),
+                    ('cheque', 'Cheque'),
+                    ('em_especie', 'Em Espécie')
+                ]
+            case _:
+                return []
+
+    def get_tipo_contrato(self):
+        """ Retorna o tipo de contrato específico baseado na transação, usando match/case. """
+        match self.tipo_transacao:
+            case 'venda':
+                return 'Contrato de Compra e Venda'
+            case 'aluguel':
+                return 'Contrato de Locação'
+            case 'permuta':
+                return 'Contrato de Permuta'
+            case 'arrendamento':
+                return 'Contrato de Arrendamento'
+            case 'financiamento':
+                return 'Contrato de Financiamento Imobiliário'
+            case 'leasing':
+                return 'Contrato de Leasing Habitacional'
+            case _:
+                return 'Contrato Padrão'
+
+    def gerar_contrato(self):
+        """ Lógica para gerar um contrato personalizado baseado no tipo de transação. """
+        tipo_contrato = self.get_tipo_contrato()
+        # Lógica para gerar o contrato (ex: preencher template PDF ou documento).
+        return f"Gerando {tipo_contrato} para {self.imovel.nome}"
+
+    def validar_transacao(self):
+        """ Adiciona regras de validação personalizada por tipo de transação. """
+        match self.tipo_transacao:
+            case 'venda':
+                if not self.condicoes_pagamento:
+                    raise ValueError("Para vendas, as condições de pagamento são obrigatórias.")
+            case 'financiamento':
+                # Exemplo de validação personalizada para financiamento
+                if self.valor < 100000:
+                    raise ValueError("O valor do imóvel para financiamento deve ser superior a 100.000.")
+            case _:
+                pass  # Outras validações podem ser adicionadas conforme necessário
+
+    def save(self, *args, **kwargs):
+        """ Validação personalizada no save, conforme necessário. """
+        self.validar_transacao()
+        super().save(*args, **kwargs)
+
     
 
 class HistoricoTransacao(models.Model):

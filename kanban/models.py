@@ -13,6 +13,7 @@ class AbstractKanbanColumn(models.Model):
     cor_inicial = models.CharField(max_length=7, default='#00FF00')  # Cor inicial (verde)
     cor_alerta = models.CharField(max_length=7, default='#FF0000')  # Cor final (vermelho)
     usa_prazo = models.BooleanField(default=False)  # Define se a coluna utiliza um prazo
+    imovel = models.ForeignKey(Imovel, on_delete=models.CASCADE, related_name='imovel', null=True)
 
     class Meta:
         abstract = True
@@ -40,7 +41,6 @@ class ContatoInicialColumn(AbstractKanbanColumn):
     # Campo adicional para armazenar a origem do lead
     origem_lead = models.CharField(max_length=40, blank=True, null=True, default='contato_offline', 
                                    help_text="Imóvel de interesse do lead, se houver", choices=ORIGEM_LEAD)
-    imovel_interessado = models.ForeignKey(Imovel, on_delete=models.CASCADE, related_name='imovel')
     
     def verificar_origem(self):
         """Método para verificar e categorizar a origem do lead."""
@@ -84,19 +84,6 @@ class VisitaImovelColumn(AbstractKanbanColumn):
         self.data_visita = nova_data
         self.save()
 
-    def verificar_prazo_alerta_visita(self):
-        """Verifica o tempo restante para a visita e muda a cor do cartão."""
-        horas_restantes = (self.data_visita - timezone.now()).total_seconds() / 3600
-        if horas_restantes <= 1:
-            return '#FF0000'  # Vermelho quando falta menos de uma hora
-        elif horas_restantes <= 3:
-            return '#FFFF00'  # Amarelo quando falta menos de três horas
-        else:
-            return '#00FF00'  # Verde se ainda está dentro do prazo
-
-    def __str__(self):
-        return f"Coluna: {self.nome} - Visita ao Imóvel"
-
 
 
 class NegociacaoColumn(AbstractKanbanColumn):
@@ -115,6 +102,7 @@ class NegociacaoColumn(AbstractKanbanColumn):
         ('titulo_capitalizacao', 'Título de Capitalização'),
         ('caucao_imovel', 'Caução de Imóvel')
     ]
+
     
     # Campos específicos para a negociação
     valor_final = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True, help_text="Valor final da negociação")
@@ -125,6 +113,14 @@ class NegociacaoColumn(AbstractKanbanColumn):
     data_prevista_fechamento = models.DateField(blank=True, null=True, help_text="Data prevista de fechamento da negociação")
     status_negociacao = models.CharField(max_length=20, choices=STATUS_NEGOCIACAO, default='em_negociacao', help_text="Status da negociação")
     observacoes = models.TextField(blank=True, null=True, help_text="Observações sobre a negociação")
+
+
+    def tipos_transacao(self):
+        return self.imovel.get_tipos_transacao()
+    
+    def get_formas_pagamento(self, transacao):
+        return transacao.get_formas_pagamento()
+
 
     def verificar_campos_obrigatorios(self):
         """Verifica se todos os campos obrigatórios estão preenchidos para avançar."""
@@ -184,7 +180,154 @@ class DocumentacaoAnaliseCreditoColumn(AbstractKanbanColumn):
         self.save()
 
     def __str__(self):
-        return f"Coluna: {self.nome} - Documentação e Análise de Crédito" 
+        return f"Coluna: {self.nome} - Documentação e Análise de Crédito"
+
+
+class AssinaturaContratoColumn(AbstractKanbanColumn):
+    """Coluna específica para Assinatura do Contrato."""
+
+    # Data da assinatura do contrato
+    data_assinatura = models.DateField(blank=True, null=True, help_text="Data da assinatura do contrato")
+    
+    # Campo para anexar o contrato assinado
+    contrato_assinado = models.FileField(upload_to='contratos/', blank=True, null=True, help_text="Anexe o contrato assinado")
+    
+    # Partes envolvidas no contrato (assumindo que temos um modelo de Pessoa para isso)
+    partes_envolvidas = models.ManyToManyField(Pessoa, related_name='contratos_envolvidos', help_text="Partes envolvidas na assinatura do contrato")
+
+    # Prazo para conclusão da assinatura
+    prazo_assinatura = models.DateTimeField(help_text="Prazo para a assinatura do contrato")
+
+    def verificar_prazo_assinatura(self):
+        """Verifica o status do prazo para assinatura e ajusta a cor do cartão."""
+        if timezone.now() > self.prazo_assinatura:
+            return '#FF0000'  # Vermelho se o prazo passou
+        dias_restantes = (self.prazo_assinatura - timezone.now()).days
+        if dias_restantes <= 1:
+            return '#FFFF00'  # Amarelo se o prazo está próximo
+        return '#00FF00'  # Verde se ainda está dentro do prazo
+
+    def anexar_contrato(self, contrato):
+        """Anexa o contrato assinado e notifica as partes envolvidas."""
+        if not contrato:
+            raise ValueError("É necessário anexar o contrato.")
+        self.contrato_assinado = contrato
+        self.save()
+        self.notificar_partes()
+
+    def notificar_partes(self):
+        """Envia notificações automáticas para as partes envolvidas com o contrato anexado."""
+        for parte in self.partes_envolvidas.all():
+            # Enviar email ou notificação para a parte
+            # Exemplo: send_email(parte.email, assunto="Contrato assinado", mensagem="Contrato anexado.", anexo=self.contrato_assinado)
+            print(f"Notificação enviada para {parte.nome}")
+
+    def mover_para_fechado(self, kanban_card):
+        """Move o cartão para a coluna Fechado quando o contrato for assinado."""
+        # Verificar se o contrato foi anexado
+        if not self.contrato_assinado:
+            raise ValueError("O contrato precisa ser assinado antes de mover para a coluna Fechado.")
+        # Atualizar o status e mover o cartão
+        kanban_card.mover_para_proxima_coluna('Fechado')
+
+    def __str__(self):
+        return f"Coluna: {self.nome} - Assinatura do Contrato"
+    
+
+class ReprovadoColumn(AbstractKanbanColumn):
+    """Coluna específica para Reprovado."""
+
+    # Motivo da reprovação
+    motivo_reprovacao = models.TextField(help_text="Motivo detalhado da reprovação do lead")
+
+    # Data de reprovação para controle
+    data_reprovacao = models.DateTimeField(auto_now_add=True)
+
+    def registrar_reprovacao(self, motivo):
+        """Registra o motivo da reprovação e a data."""
+        if not motivo:
+            raise ValueError("O motivo da reprovação não pode estar vazio.")
+        self.motivo_reprovacao = motivo
+        self.data_reprovacao = timezone.now()
+        self.save()
+
+    def mover_para_reprovado(self, kanban_card):
+        """Move o cartão para a coluna Reprovado com a razão detalhada."""
+        # Verifica se o motivo da reprovação está preenchido
+        if not self.motivo_reprovacao:
+            raise ValueError("O motivo da reprovação precisa ser registrado.")
+        
+        # Atualiza o status do cartão e move para a coluna 'Reprovado'
+        kanban_card.mover_para_proxima_coluna('Reprovado')
+
+    def __str__(self):
+        return f"Coluna: {self.nome} - Reprovado"
+    
+
+class ReprovadoColumn(AbstractKanbanColumn):
+    """Coluna específica para Reprovado."""
+
+    # Motivo da reprovação
+    motivo_reprovacao = models.TextField(help_text="Motivo detalhado da reprovação do lead")
+
+    # Data de reprovação para controle
+    data_reprovacao = models.DateTimeField(auto_now_add=True)
+
+    def registrar_reprovacao(self, motivo):
+        """Registra o motivo da reprovação e a data."""
+        if not motivo:
+            raise ValueError("O motivo da reprovação não pode estar vazio.")
+        self.motivo_reprovacao = motivo
+        self.data_reprovacao = timezone.now()
+        self.save()
+
+    def mover_para_reprovado(self, kanban_card):
+        """Move o cartão para a coluna Reprovado com a razão detalhada."""
+        # Verifica se o motivo da reprovação está preenchido
+        if not self.motivo_reprovacao:
+            raise ValueError("O motivo da reprovação precisa ser registrado.")
+        
+        # Atualiza o status do cartão e move para a coluna 'Reprovado'
+        kanban_card.mover_para_proxima_coluna('Reprovado')
+
+    def __str__(self):
+        return f"Coluna: {self.nome} - Reprovado"
+    
+
+class InativosColumn(AbstractKanbanColumn):
+    """Coluna específica para leads inativos."""
+
+    # Motivo da inatividade
+    motivo_inatividade = models.TextField(help_text="Motivo pelo qual o lead ficou inativo")
+
+    # Última ação realizada antes da inatividade
+    ultima_acao_realizada = models.TextField(blank=True, null=True, help_text="Última ação realizada no lead")
+
+    # Indica se o lead é recuperável ou arquivado permanentemente
+    reativacao_possivel = models.BooleanField(default=True, help_text="Define se o lead pode ser reativado no futuro")
+
+    # Data de inatividade para controle
+    data_inatividade = models.DateTimeField(auto_now_add=True)
+
+    def verificar_inatividade(self):
+        """Verifica se o lead atingiu o limite de inatividade para ser arquivado."""
+        dias_inatividade = (timezone.now() - self.data_inatividade).days
+        if dias_inatividade >= 30:
+            self.reativacao_possivel = False  # Arquivar como não recuperável após 30 dias
+            self.save()
+            return '#800080'  # Roxo para inativos arquivados
+        elif dias_inatividade >= 20:
+            return '#800080'  # Roxo para leads que estão há mais de 20 dias inativos
+        return '#00FF00'  # Verde se ainda não está inativo
+
+    def classificar_reativacao(self, reativavel=True):
+        """Define se o lead é recuperável ou arquivado permanentemente."""
+        self.reativacao_possivel = reativavel
+        self.save()
+
+    def __str__(self):
+        return f"Coluna: {self.nome} - Inativos"
+
 
 class KanbanCard(models.Model):
     lead_nome = models.CharField(max_length=100)
