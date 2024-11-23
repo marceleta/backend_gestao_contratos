@@ -1,7 +1,6 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from usuario.models import Usuario
-from .models import Kanban, ContatoInicialColumn, VisitaImovelColumn, NegociacaoColumn, DocumentacaoAnaliseCreditoColumn, AssinaturaContratoColumn, ReprovadoColumn, InativosColumn
 from kanban.models import criar_kanban_padrao
 
 @receiver(post_save, sender=Usuario)

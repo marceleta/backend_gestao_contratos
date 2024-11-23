@@ -1,204 +1,92 @@
 from usuario.models import Usuario
 from django.core.exceptions import ValidationError
-from django.contrib.contenttypes.fields import GenericForeignKey
-from django.contrib.contenttypes.fields import GenericRelation
-from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 from django.db import models
 from django.db.models import F, Max
 
 
-class KanbanCard(models.Model):
-    lead_nome = models.CharField(max_length=100)
-    descricao = models.TextField(blank=True)
-    data_criacao = models.DateTimeField(null=True, blank=True)
-    ultima_atualizacao = models.DateTimeField(auto_now=True)
-    data_prazo = models.DateTimeField(null=True, blank=True)
-    cor_atual = models.CharField(max_length=7, default='#00FF00')  # Cor inicial (verde)
-    dados_adicionais = models.TextField(blank=True, help_text="Campo para dados dinâmicos adicionais")
-    
-    # Dados específicos para a coluna Visita ao Imóvel
-    data_visita = models.DateTimeField(help_text="Data e hora da visita agendada", null=True, blank=True)
-    observacoes_visita = models.TextField(blank=True, null=True, help_text="Observações sobre a visita")
-    visita_realizada = models.BooleanField(default=False, help_text="Indica se a visita foi realizada")
-    visita_reagendada = models.BooleanField(default=False, help_text="Indica se a visita foi reagendada")
-
-    # Dados específicos para a coluna Negociação
-    valor_final = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True, help_text="Valor final da negociação")
-    tipo_garantia = models.CharField(max_length=50, blank=True, null=True, choices=[
-        ('fiador', 'Fiador'), ('deposito_caucao', 'Depósito Caução'), 
-        ('seguro_fianca', 'Seguro Fiança'), ('titulo_capitalizacao', 'Título de Capitalização'), 
-        ('caucao_imovel', 'Caução de Imóvel')
-    ], help_text="Tipo de garantia")
-    prazo_vigencia = models.PositiveIntegerField(blank=True, null=True, help_text="Prazo de vigência do contrato em meses")
-    metodo_pagamento = models.CharField(max_length=100, blank=True, null=True, help_text="Método de pagamento")
-    status_negociacao = models.CharField(max_length=20, choices=[
-        ('em_negociacao', 'Em Negociação'), ('concluida', 'Concluída'), ('cancelada', 'Cancelada')
-    ], default='em_negociacao', help_text="Status da negociação")
-
-    # Dados específicos para a coluna Documentação e Análise de Crédito
-    documentos_anexados = models.FileField(upload_to='documentos/', blank=True, null=True, help_text="Documentos anexados para análise")
-    status_documentacao = models.CharField(max_length=20, choices=[
-        ('pendente', 'Pendente'), ('completa', 'Completa'), ('incompleta', 'Incompleta'), ('vencida', 'Vencida')
-    ], default='pendente', help_text="Status da documentação")
-    resultado_analise_credito = models.CharField(max_length=20, choices=[
-        ('aprovado', 'Aprovado'), ('reprovado', 'Reprovado'), ('em_analise', 'Em Análise')
-    ], default='em_analise', help_text="Resultado da análise de crédito")
-
-    # Assinatura do Contrato
-    data_assinatura = models.DateField(blank=True, null=True, help_text="Data da assinatura do contrato")
-    contrato_assinado = models.FileField(upload_to='contratos/', blank=True, null=True, help_text="Anexe o contrato assinado")
-    
-    # Campos necessários para usar GenericForeignKey
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.PositiveIntegerField()
-    content_object = GenericForeignKey('content_type', 'object_id')
-
-    def associar_a_coluna(self, coluna):
-        if not isinstance(coluna, AbstractKanbanColumn):
-            raise ValidationError("A coluna deve ser uma subclasse de AbstractKanbanColumn.")
-
-        # Validação de campos obrigatórios
-        coluna.validar_campos(self)
-
-        self.content_type = ContentType.objects.get_for_model(coluna)
-        self.object_id = coluna.id
-        self.save()
-
-    def atualizar_cor(self):
-        """Atualiza a cor do cartão com base no prazo da coluna atual."""
-        if hasattr(self.content_object, 'verificar_prazo'):
-            self.cor_atual = self.content_object.verificar_prazo(self.data_criacao)
-            self.save()
-
-    def __str__(self):
-        return f"Lead: {self.lead_nome} na Coluna: {self.content_object}"
 
 
-class AbstractKanbanColumn(models.Model):
-    """Modelo abstrato para colunas do Kanban."""
+class KanbanColumn(models.Model):
     nome = models.CharField(max_length=100)
-    prazo_alerta = models.PositiveIntegerField(default=3)  # Em horas
-    cor_inicial = models.CharField(max_length=7, default='#00FF00')
-    cor_alerta = models.CharField(max_length=7, default='#FF0000')
+    meta_dados = models.JSONField(default=dict, blank=True)
+    prazo_alerta = models.PositiveIntegerField(default=3)  # Prazo em horas
+    cor_inicial = models.CharField(max_length=7, default="#00FF00")
+    cor_alerta = models.CharField(max_length=7, default="#FF0000")
 
-    class Meta:
-        abstract = True
-
-    def verificar_prazo(self, data_criacao):
-        horas_passadas = (timezone.now() - data_criacao).total_seconds() / 3600
-        if horas_passadas > self.prazo_alerta:            
-            return self.cor_alerta
-        elif horas_passadas > (self.prazo_alerta / 2):            
-            return '#FFFF00'  # Cor de alerta intermediária (amarela)
-        
-        return self.cor_inicial
-    
     def validar_campos(self, card):
-        """Valida se os campos relevantes estão preenchidos no cartão."""
+        """Valida se os campos obrigatórios da coluna estão preenchidos no cartão."""
         erros = []
-        for campo, descricao in self.campos_obrigatorios.items():
+        for campo, descricao in self.meta_dados.get("campos_obrigatorios", {}).items():
             if not getattr(card, campo, None):
                 erros.append(f"O campo '{campo}' ({descricao}) é obrigatório para esta coluna.")
         if erros:
             raise ValidationError(erros)
+
+    def verificar_prazo(self, data_criacao):
+
+        alerta_cor = self.cor_inicial
+        alerta_prazo = float(self.prazo_alerta)
+
+        #print(f'prazo_alerta: {alerta_prazo}')
+        #print(f'data_criacao: {data_criacao}')
+        #print(f'timezone.now(): {timezone.now()}')
+        """Calcula a cor baseada no prazo de alerta."""
+        horas_passadas = (timezone.now() - data_criacao).total_seconds() / 3600
+        #print(f'horas passadas: {horas_passadas}')
+        
+        if horas_passadas > alerta_prazo:            
+            alerta_cor = self.cor_alerta
+        elif horas_passadas >= (alerta_prazo / 2):            
+           alerta_cor = '#FFFF00'  # Cor de alerta intermediária (amarela)
+        
+        return alerta_cor
+
+    def __str__(self):
+        return f"Coluna: {self.nome}"
     
-class ContatoInicialColumn(AbstractKanbanColumn):
-    """Coluna para Contato Inicial."""
-    kanban_cards = GenericRelation(KanbanCard, related_query_name='contato_inicial_column')
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.campos_obrigatorios = {
-            "lead_nome": "Nome do lead",
-            "descricao": "Descrição inicial do lead",
-        }
+class KanbanCard(models.Model):
+    lead_nome = models.CharField(max_length=100)
+    descricao = models.TextField(blank=True)
+    data_criacao = models.DateTimeField(auto_now_add=True)  # Define automaticamente a data de criação
+    ultima_atualizacao = models.DateTimeField(auto_now=True)
+    data_prazo = models.DateTimeField(null=True, blank=True)
+    cor_atual = models.CharField(max_length=7, default='#00FF00')  # Cor inicial (verde)
+    dados_adicionais = models.JSONField(default=dict, blank=True, help_text="Campo para dados dinâmicos adicionais")
+    
+    # Campos necessários para associar a uma coluna do Kanban
+    coluna = models.ForeignKey(
+        KanbanColumn,
+        on_delete=models.CASCADE,
+        related_name="cards",
+        help_text="Coluna do Kanban à qual este card está associado"
+    )
 
+    def validar_e_associar_coluna(self, coluna):
+        """
+        Valida e associa o cartão a uma coluna do Kanban.
+        """
+        if not isinstance(coluna, KanbanColumn):
+            raise ValidationError("A coluna deve ser uma instância de KanbanColumn.")
+        
+        # Valida os campos obrigatórios da coluna
+        coluna.validar_campos(self)
+        
+        # Associa a coluna e salva o card
+        self.coluna = coluna
+        self.save()
 
-class VisitaImovelColumn(AbstractKanbanColumn):
-    """Coluna para Visita ao Imóvel."""
-    kanban_cards = GenericRelation(KanbanCard, related_query_name='visita_imovel_column')
+    def atualizar_cor(self):
+        """
+        Atualiza a cor do cartão com base no prazo definido pela coluna.
+        """
+        if self.data_criacao:
+            self.cor_atual = self.coluna.verificar_prazo(self.data_criacao)
+            self.save()
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.campos_obrigatorios = {
-            "data_visita": "Data e hora da visita agendada",
-            "observacoes_visita": "Observações sobre a visita",
-        }
-
-
-class NegociacaoColumn(AbstractKanbanColumn):
-    """Coluna para Negociação."""
-    kanban_cards = GenericRelation(KanbanCard, related_query_name='negociacao_column')
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.campos_obrigatorios = {
-            "valor_final": "Valor final da negociação",
-            "tipo_garantia": "Tipo de garantia",
-            "prazo_vigencia": "Prazo de vigência do contrato",
-            "metodo_pagamento": "Método de pagamento",
-        }
-
-
-class DocumentacaoAnaliseCreditoColumn(AbstractKanbanColumn):
-    """Coluna para Documentação e Análise de Crédito."""
-    kanban_cards = GenericRelation(KanbanCard, related_query_name='documentacao_analise_column')
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.campos_obrigatorios = {
-            "documentos_anexados": "Documentos anexados para análise",
-            "status_documentacao": "Status da documentação",
-            "resultado_analise_credito": "Resultado da análise de crédito",
-        }
-
-
-class AssinaturaContratoColumn(AbstractKanbanColumn):
-    """Coluna para Assinatura de Contrato."""
-    kanban_cards = GenericRelation(KanbanCard, related_query_name='assinatura_contrato_column')
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.campos_obrigatorios = {
-            "data_assinatura": "Data da assinatura do contrato",
-            "contrato_assinado": "Contrato assinado anexado",
-        }
-
-
-class ReprovadoColumn(AbstractKanbanColumn):
-    """Coluna para Reprovado."""
-    kanban_cards = GenericRelation(KanbanCard, related_query_name='reprovado_column')
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.campos_obrigatorios = {
-            "status_documentacao": "Status da documentação",
-            "resultado_analise_credito": "Resultado da análise de crédito",
-        }
-
-
-class InativosColumn(AbstractKanbanColumn):
-    """Coluna para Inativos."""
-    kanban_cards = GenericRelation(KanbanCard, related_query_name='inativos_column')
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.campos_obrigatorios = {
-            "descricao": "Motivo da inatividade",
-        }
-
-
-class ContratosFirmadosColumn(AbstractKanbanColumn):
-    """Coluna para Contratos Firmados."""
-    kanban_cards = GenericRelation(KanbanCard, related_query_name='contratos_firmados_column')
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.campos_obrigatorios = {
-            "contrato_assinado": "Contrato assinado anexado",
-            "data_assinatura": "Data da assinatura do contrato",
-        }
+    def __str__(self):
+        return f"Lead: {self.lead_nome} na Coluna: {self.coluna.nome}"
 
 
 class Kanban(models.Model):
@@ -210,69 +98,50 @@ class Kanban(models.Model):
 
     def __str__(self):
         return f"Kanban: {self.nome} do Usuário: {self.usuario}"
-
-   
     
 
 class KanbanColumnOrder(models.Model):
-    """Classe para gerenciar a ordem das colunas dentro de um Kanban."""
     kanban = models.ForeignKey(Kanban, on_delete=models.CASCADE, related_name="colunas")
-    coluna_content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    coluna_object_id = models.PositiveIntegerField()
-    coluna = GenericForeignKey('coluna_content_type', 'coluna_object_id')
-    posicao = models.PositiveIntegerField(help_text="Posição da coluna no Kanban")
+    coluna = models.ForeignKey(KanbanColumn, on_delete=models.CASCADE, related_name="ordem")
+    posicao = models.PositiveIntegerField()
 
     class Meta:
-        unique_together = ('kanban', 'coluna_content_type', 'coluna_object_id')
         ordering = ['posicao']
+        unique_together = ('kanban', 'coluna')
+        
 
-    def __str__(self):
-        return f"{self.kanban.nome} - {self.coluna.nome} (Posição {self.posicao})"
-    
-
-    def save(self, *args, **kwargs):
+    @staticmethod
+    def associar_coluna(kanban, coluna, posicao):
         """
-        Sobrescreve o método save para ajustar as posições de outras colunas, se necessário.
+        Associa uma nova coluna ao Kanban ou ajusta a posição de uma coluna existente.
         """
-        # Recupera todas as colunas do mesmo Kanban
-        colunas = KanbanColumnOrder.objects.filter(kanban=self.kanban).exclude(id=self.id)
+        if not isinstance(coluna, KanbanColumn):
+            raise ValidationError("A coluna fornecida deve ser uma instância de KanbanColumn.")
 
-        # Valida se a posição é válida
-        if self.posicao < 1:
+        if posicao < 1:
             raise ValidationError("A posição deve ser maior ou igual a 1.")
+        
 
-        max_posicao = colunas.aggregate(Max('posicao'))['posicao__max'] or 0
+        colunas_existentes = KanbanColumnOrder.objects.filter(kanban=kanban)
+        max_posicao = colunas_existentes.aggregate(Max('posicao'))['posicao__max'] or 0
 
-        # Ajusta as posições das colunas apenas se necessário
-        if colunas.filter(posicao=self.posicao).exists():
-            colunas.filter(posicao__gte=self.posicao).update(posicao=F('posicao') + 1)
+        if posicao > max_posicao + 1:
+            posicao = max_posicao + 1
 
-        # Garante que a posição não ultrapasse o máximo permitido
-        if self.posicao > (max_posicao + 1):
-            self.posicao = max_posicao + 1
+        # Ajusta as posições das colunas, se necessário
+        if colunas_existentes.filter(posicao=posicao).exists():
+            colunas_existentes.filter(posicao__gte=posicao).update(posicao=F('posicao') + 1)
 
-        super().save(*args, **kwargs)
 
-    def verificar_se_extende_abstract_column(self, coluna):
-        """Verifica se a coluna fornecida é uma subclasse concreta de AbstractKanbanColumn."""
-        model_class = coluna.__class__
-        if not issubclass(model_class, AbstractKanbanColumn) or model_class._meta.abstract:
-            raise ValidationError("A coluna associada deve ser uma subclasse concreta de AbstractKanbanColumn.")
-        return True
+        # Cria ou atualiza o KanbanColumnOrder
+        column_order, created = KanbanColumnOrder.objects.update_or_create(
+            kanban=kanban,
+            coluna=coluna,
+            defaults={'posicao': posicao}
+        )
+        return column_order
 
-    def associar_coluna(self, coluna, posicao):
-        """
-        Verifica e associa a coluna ao KanbanColumnOrder, salvando-a na posição especificada.
-        """
-        # Verifica se a coluna é uma subclasse de AbstractKanbanColumn
-        if self.verificar_se_extende_abstract_column(coluna):
-            # Define o tipo de conteúdo e ID do objeto
-            self.coluna_content_type = ContentType.objects.get_for_model(coluna)
-            self.coluna_object_id = coluna.id
-            self.posicao = posicao
-            self.save()
-            
-        return self
+
     
 
 def criar_kanban_padrao(usuario):
@@ -283,23 +152,58 @@ def criar_kanban_padrao(usuario):
         descricao="Kanban padrão do usuário"
     )
 
-    # Define as colunas padrão com as posições corretas e cria as instâncias de cada coluna
+    # Define as colunas padrão com suas posições e campos obrigatórios
     colunas_padrao = [
-        (ContatoInicialColumn, "Contato Inicial", 1),
-        (VisitaImovelColumn, "Visita ao Imóvel", 2),
-        (NegociacaoColumn, "Negociação", 3),
-        (DocumentacaoAnaliseCreditoColumn, "Documentação e Análise de Crédito", 4),
-        (AssinaturaContratoColumn, "Assinatura do Contrato", 5),
-        (ContratosFirmadosColumn, "Contratos Firmados", 6),
-        (ReprovadoColumn, "Reprovado", 7),
-        (InativosColumn, "Inativos", 8),
-        
+        ("Contato Inicial", 1, {
+            "lead_nome": "Nome do lead",
+            "descricao": "Descrição inicial do lead",
+        }),
+        ("Visita ao Imóvel", 2, {
+            "data_visita": "Data e hora da visita agendada",
+            "observacoes_visita": "Observações sobre a visita",
+        }),
+        ("Negociação", 3, {
+            "valor_final": "Valor final da negociação",
+            "tipo_garantia": "Tipo de garantia",
+            "prazo_vigencia": "Prazo de vigência do contrato",
+            "metodo_pagamento": "Método de pagamento",
+        }),
+        ("Documentação e Análise de Crédito", 4, {
+            "documentos_anexados": "Documentos anexados para análise",
+            "status_documentacao": "Status da documentação",
+            "resultado_analise_credito": "Resultado da análise de crédito",
+        }),
+        ("Assinatura do Contrato", 5, {
+            "data_assinatura": "Data da assinatura do contrato",
+            "contrato_assinado": "Contrato assinado anexado",
+        }),
+        ("Contratos Firmados", 6, {
+            "contrato_assinado": "Contrato assinado anexado",
+            "data_assinatura": "Data da assinatura do contrato",
+        }),
+        ("Reprovado", 7, {
+            "status_documentacao": "Status da documentação",
+            "resultado_analise_credito": "Resultado da análise de crédito",
+        }),
+        ("Inativos", 8, {
+            "descricao": "Motivo da inatividade",
+        }),
     ]
 
     # Itera sobre a lista de colunas padrão, criando cada uma e associando-a ao Kanban
-    for coluna_class, nome, posicao in colunas_padrao:
-        coluna = coluna_class.objects.create(nome=nome)
-        KanbanColumnOrder.objects.create(kanban=kanban, coluna=coluna, posicao=posicao)
+    for nome, posicao, campos_obrigatorios in colunas_padrao:
+        # Cria a coluna específica
+        coluna = KanbanColumn.objects.create(nome=nome, meta_dados=campos_obrigatorios)        
+        coluna.save()
+        # Associa a coluna ao Kanban com a ordem definida
+        KanbanColumnOrder.objects.create(
+            kanban=kanban,
+            coluna=coluna,
+            posicao=posicao
+        )
+
+    return kanban
+
 
 
 

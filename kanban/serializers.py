@@ -1,73 +1,92 @@
 from rest_framework import serializers
-from .models import (
-    Kanban, KanbanCard, KanbanColumnOrder
-)
+from .models import Kanban, KanbanCard, KanbanColumnOrder, KanbanColumn
 from django.contrib.auth import get_user_model
-from django.contrib.contenttypes.models import ContentType
 
 User = get_user_model()
 
 
+class KanbanColumnSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = KanbanColumn
+        fields = ['id', 'nome', 'meta_dados', 'prazo_alerta', 'cor_inicial', 'cor_alerta']
+        read_only_fields = ['id']  # O campo `id` será somente leitura
+    @staticmethod
+    def _validate_hex_color(value):
+        """
+            Valida se o valor fornecido é um código hexadecimal de cor válido.
+            O valor deve começar com '#' e ter 4 ou 7 caracteres.
+
+            Args:
+                value (str): O valor a ser validado.
+
+            Returns:
+                str: O valor validado se for correto.
+
+            Raises:
+                serializers.ValidationError: Se o valor não for um código hexadecimal válido.
+        """
+        if not value.startswith('#') or len(value) not in [4, 7]:
+            raise serializers.ValidationError("O campo deve ser um código hexadecimal válido.")
+        try:
+            int(value[1:], 16)
+        except ValueError:
+            raise serializers.ValidationError("O campo deve ser um código hexadecimal válido.")
+        return value
+
+    def validate_cor_inicial(self, value):
+        return self._validate_hex_color(value)
+
+    def validate_cor_alerta(self, value):
+        return self._validate_hex_color(value)
+
+
+
 class KanbanCardSerializer(serializers.ModelSerializer):
-    content_type = serializers.PrimaryKeyRelatedField(queryset=ContentType.objects.all())
     class Meta:
         model = KanbanCard
-        fields = [
-            'id', 'lead_nome', 'descricao', 'data_criacao', 'ultima_atualizacao', 'data_prazo',
-            'cor_atual', 'dados_adicionais', 'data_visita', 'observacoes_visita', 'visita_realizada',
-            'visita_reagendada', 'valor_final', 'tipo_garantia', 'prazo_vigencia', 'metodo_pagamento',
-            'status_negociacao', 'documentos_anexados', 'status_documentacao', 'resultado_analise_credito',
-            'data_assinatura', 'contrato_assinado', 'content_type', 'object_id'
-        ]
+        fields = ['id', 'lead_nome', 'descricao', 'data_criacao', 'ultima_atualizacao', 'data_prazo', 'cor_atual', 'dados_adicionais', 'coluna']
+        read_only_fields = ['id', 'data_criacao', 'ultima_atualizacao', 'cor_atual']
 
 
-class KanbanColumnSerializer(serializers.ModelSerializer):
-    cards = KanbanCardSerializer(many=True, read_only=True, source='kanban_cards')
+class KanbanColumnOrderSerializer(serializers.ModelSerializer):
+    coluna_id = serializers.PrimaryKeyRelatedField(queryset=KanbanColumn.objects.all(), source='coluna')
+    kanban_id = serializers.PrimaryKeyRelatedField(queryset=Kanban.objects.all(), source='kanban')
 
     class Meta:
         model = KanbanColumnOrder
-        fields = ['id', 'kanban', 'coluna_content_type', 'coluna_object_id', 'coluna', 'posicao', 'cards']
-
-    def validate(self, attrs):
-        """
-        Valida se o ContentType e o objeto referenciado são válidos.
-        """
-        content_type = attrs.get('coluna_content_type')
-        object_id = attrs.get('coluna_object_id')
-
-        if content_type and object_id:
-            model_class = content_type.model_class()
-            if not model_class:
-                raise serializers.ValidationError("Tipo de conteúdo inválido.")
-            if not model_class.objects.filter(id=object_id).exists():
-                raise serializers.ValidationError("Objeto referenciado não encontrado.")
-        return attrs
+        fields = ['id', 'coluna_id', 'kanban_id', 'posicao']
 
     def create(self, validated_data):
-        """
-        Cria uma nova coluna e associa ao Kanban.
-        """
-        return KanbanColumnOrder.objects.create(**validated_data)
+        #print(f'validated_data {validated_data}')
+        # Extraímos `kanban` e `coluna` dos dados validados
+        kanban = validated_data.pop('kanban')
+        coluna = validated_data.pop('coluna')
+        # Criamos a instância usando esses dados
+        return KanbanColumnOrder.objects.create(kanban=kanban, coluna=coluna, **validated_data)
 
     def update(self, instance, validated_data):
-        """
-        Atualiza os dados da coluna no Kanban.
-        """
+        # Extraímos `kanban` e `coluna` dos dados validados se eles existirem
+        instance.kanban = validated_data.get('kanban', instance.kanban)
+        instance.coluna = validated_data.get('coluna', instance.coluna)
         instance.posicao = validated_data.get('posicao', instance.posicao)
         instance.save()
         return instance
 
 
-
 class KanbanSerializer(serializers.ModelSerializer):
-    usuario = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
-    colunas = KanbanColumnSerializer(many=True, read_only=True)
+    usuario = serializers.StringRelatedField(read_only=True)  # Exibe o nome do usuário como string
+    colunas = KanbanColumnOrderSerializer(many=True, read_only=True)
 
     class Meta:
         model = Kanban
         fields = ['id', 'nome', 'descricao', 'data_criacao', 'ultima_atualizacao', 'usuario', 'colunas']
+        read_only_fields = ['id', 'data_criacao', 'ultima_atualizacao', 'usuario']
 
-    def create(self, validated_data):
-        usuario = validated_data.get('usuario')
-        kanban, created = Kanban.objects.get_or_create(usuario=usuario)
-        return kanban
+    def validate(self, data):
+        # Verifica se campos de somente leitura foram incluidos no payload
+        for field in self.Meta.read_only_fields:
+            if field in data:
+                raise serializers.ValidationError({field: f'O campo `{field}` é somente leitura e não pode ser alterado.'})
+            
+        return data
+

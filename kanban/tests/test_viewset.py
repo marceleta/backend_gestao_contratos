@@ -1,236 +1,275 @@
-from rest_framework.test import APITestCase
-from rest_framework.test import APIClient
-from django.core.exceptions import ValidationError
+from rest_framework.test import APITestCase, APIClient
 from usuario.models import Usuario
 from rest_framework import status
+from django.urls import reverse
+from kanban.models import Kanban, KanbanColumnOrder, KanbanCard, KanbanColumn
+from kanban.views import KanbanViewSet
 from django.contrib.auth import get_user_model
-from django.contrib.contenttypes.models import ContentType
-from kanban.models import Kanban, KanbanCard, ContatoInicialColumn, VisitaImovelColumn
-from kanban.serializers import KanbanCardSerializer
 from kanban.signals import criar_kanban_ao_criar_usuario
 from django.db.models.signals import post_save
-from kanban.models import Kanban, KanbanColumnOrder, AbstractKanbanColumn
 
 User = get_user_model()
 
-class KanbanCardViewSetTest(APITestCase):
+class KanbanViewSetTest(APITestCase):
 
     @classmethod
     def setUpTestData(cls):
         post_save.disconnect(criar_kanban_ao_criar_usuario, sender=Usuario)
-        # Criação de dados reutilizáveis
-        cls.user = User.objects.create_user(username="testuser", password="123456")
-        cls.kanban = Kanban.objects.create(usuario=cls.user, nome="Kanban Teste")
-        cls.coluna = ContatoInicialColumn.objects.create(nome="Contato Inicial")
-        cls.coluna_content_type = ContentType.objects.get_for_model(ContatoInicialColumn)
-        
-        cls.card_data = {
-            'lead_nome': 'Lead Teste',
-            'descricao': 'Descrição do teste',
-            'content_type': cls.coluna_content_type.id,
-            'object_id': cls.coluna.id,
-        }
+        # Criação de um usuário e Kanban para testes
+        cls.usuario = Usuario.objects.create(username="testuser", password="testpassword")
+        cls.kanban = Kanban.objects.create(nome="Kanban Teste", descricao="Descrição do Kanban de Teste", usuario=cls.usuario)
+
+        # Criação de colunas e cards para o Kanban
+        cls.coluna1 = KanbanColumn.objects.create(nome="Coluna 1", meta_dados={"descricao": "Primeira coluna"})
+        cls.coluna2 = KanbanColumn.objects.create(nome="Coluna 2", meta_dados={"descricao": "Segunda coluna"})
+
+        cls.kanban_column_order1 = KanbanColumnOrder.objects.create(kanban=cls.kanban, coluna=cls.coluna1, posicao=1)
+        cls.kanban_column_order2 = KanbanColumnOrder.objects.create(kanban=cls.kanban, coluna=cls.coluna2, posicao=2)
+
+        cls.card1 = KanbanCard.objects.create(lead_nome="Lead 1", descricao="Primeiro Card", coluna=cls.coluna1, data_prazo="2024-12-31")
+        cls.card2 = KanbanCard.objects.create(lead_nome="Lead 2", descricao="Segundo Card", coluna=cls.coluna2, data_prazo="2024-12-31")
 
     def setUp(self):
-        # Inicializa o cliente autenticado para cada teste
+        # Autentica o usuário para ser utilizado nos testes
         self.client = APIClient()
-        self.client.force_authenticate(user=self.user)
+        self.client.force_authenticate(user=self.usuario)
 
+    def test_retrieve_kanban(self):
+        """
+        Testa se o método retrieve retorna corretamente o Kanban do usuário.
+        """
+        url = reverse('kanban-detail', kwargs={'pk': self.usuario.id})
+        response = self.client.get(url)
+        #print(f'test_retrieve_kanban response.data: {response.data}')
 
-    def test_create_kanban_card(self):
-        response = self.client.post('/api/v1/kanbancards/', data=self.card_data)
-        #print('test_create_kanban_card: '+str(response.json()))
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(KanbanCard.objects.count(), 1)
-        self.assertEqual(response.data['lead_nome'], self.card_data['lead_nome'])
-
-
-    def test_create_kanban_card_invalid_column(self):
-        invalid_data = self.card_data.copy()
-        invalid_data['object_id'] = 999  # Coluna inexistente
-
-        with self.assertRaises(ValidationError) as context:
-            self.client.post('/api/v1/kanbancards/', data=invalid_data)
-
-        # Verifica o conteúdo da exceção capturada
-        exception = context.exception
-        #print(f'test_create_kanban_card_invalid_column: {exception}')
-        self.assertIn('object_id', exception.message_dict)
-        self.assertEqual(exception.message_dict['object_id'][0], "Coluna não encontrada.")
-
-    def test_partial_update_kanban_card(self):
-        # Cria um card inicial
-        card = KanbanCard.objects.create(
-            lead_nome="Lead Original",
-            content_type=self.coluna_content_type,
-            object_id=self.coluna.id
-        )
-        partial_data = {'lead_nome': 'Novo Lead'}
-        response = self.client.patch(f'/api/v1/kanbancards/{card.id}/', data=partial_data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        card.refresh_from_db()
-        self.assertEqual(card.lead_nome, partial_data['lead_nome'])
+        self.assertEqual(response.data['nome'], self.kanban.nome)
+        self.assertEqual(response.data['descricao'], self.kanban.descricao)
+        self.assertEqual(response.data['usuario'], self.usuario.username)
 
-    def test_update_column_with_validation(self):
-        # Cria um card inicial
-        card = KanbanCard.objects.create(
-            lead_nome="Lead Original",
-            content_type=self.coluna_content_type,
-            object_id=self.coluna.id
-        )
-        new_column = VisitaImovelColumn.objects.create(nome="Nova Coluna")
-        update_data = {
-            'object_id': new_column.id,
-            'content_type': ContentType.objects.get_for_model(VisitaImovelColumn).id
-        }
+    def test_retrieve_kanban_not_found(self):
+        """
+        Testa se o método retrieve retorna 404 quando o Kanban não é encontrado.
+        """
+        url = reverse('kanban-detail', kwargs={'pk': 9999})  # ID inexistente
+        response = self.client.get(url)
+        #print(f'test_retrieve_kanban_not_found response.data: {response.data}')
 
-        # Faz a requisição de atualização
-        response = self.client.patch(f'/api/v1/kanbancards/{card.id}/', data=update_data)
-        #print(f'test_update_column_with_validation: {response.data}')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-        # Verifica que a resposta tem status 400
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    def test_colunas_e_cards(self):
+        """
+        Testa se o método colunas_e_cards retorna as colunas e os cards associados ao Kanban do usuário.
+        """
+        url = reverse('kanban-colunas-e-cards', kwargs={'pk': self.usuario.id})
+        response = self.client.get(url)
+        #print(f'test_colunas_e_cards response.data: {response.data}')
 
-        # Verifica que a chave 'detalhes_validacao' está presente na resposta
-        self.assertIn('detalhes_validacao', response.data)
-
-        # Verifica o conteúdo de 'detalhes_validacao'
-        erros = response.data['detalhes_validacao']
-        self.assertIn("O campo 'data_visita' (Data e hora da visita agendada) é obrigatório para esta coluna.", erros)
-        self.assertIn("O campo 'observacoes_visita' (Observações sobre a visita) é obrigatório para esta coluna.", erros)
-
-    
-    def test_update_column_with_success(self):
-        # Cria um card inicial
-        card = KanbanCard.objects.create(
-            lead_nome="Lead Original",
-            content_type=self.coluna_content_type,
-            object_id=self.coluna.id
-        )
-        new_column = VisitaImovelColumn.objects.create(nome="Nova Coluna")
-        update_data = {
-            'object_id': new_column.id,
-            'content_type': ContentType.objects.get_for_model(VisitaImovelColumn).id,
-            'data_visita': '2024-11-20T10:30:00Z',
-            'observacoes_visita': 'Visita agendada com sucesso.'
-        }
-
-        # Faz a requisição de atualização
-        response = self.client.patch(f'/api/v1/kanbancards/{card.id}/', data=update_data)
-        #print(f'test_update_column_with_success: {response.data}')
-
-        # Verifica que a resposta tem status 200 (OK)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        kanban_data = response.data['kanban']
+        colunas_data = response.data['colunas']
 
-        # Atualiza o objeto card do banco de dados
-        card.refresh_from_db()
+        # Verificando os dados do Kanban
+        self.assertEqual(kanban_data['id'], self.kanban.id)
+        self.assertEqual(kanban_data['nome'], self.kanban.nome)
 
-        # Verifica se os campos foram atualizados corretamente
-        self.assertEqual(card.object_id, new_column.id)
-        self.assertEqual(card.data_visita.isoformat(), '2024-11-20T10:30:00+00:00')
-        self.assertEqual(card.observacoes_visita, 'Visita agendada com sucesso.')
+        # Verificando as colunas e seus cards
+        self.assertEqual(len(colunas_data), 2)
 
+        coluna1_data = colunas_data[0]
+        self.assertEqual(coluna1_data['coluna']['id'], self.coluna1.id)
+        self.assertEqual(coluna1_data['coluna']['nome'], self.coluna1.nome)
+        self.assertEqual(len(coluna1_data['coluna']['cards']), 1)
+        self.assertEqual(coluna1_data['coluna']['cards'][0]['lead_nome'], self.card1.lead_nome)
 
-    def test_permissions_for_unauthenticated_user(self):
-        self.client.logout()
-        response = self.client.get('/api/v1/kanbancards/')
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        coluna2_data = colunas_data[1]
+        self.assertEqual(coluna2_data['coluna']['id'], self.coluna2.id)
+        self.assertEqual(coluna2_data['coluna']['nome'], self.coluna2.nome)
+        self.assertEqual(len(coluna2_data['coluna']['cards']), 1)
+        self.assertEqual(coluna2_data['coluna']['cards'][0]['lead_nome'], self.card2.lead_nome)
+
+    def test_colunas_e_cards_not_found(self):
+        """
+        Testa se o método colunas_e_cards retorna 404 quando o Kanban não é encontrado.
+        """
+        url = reverse('kanban-colunas-e-cards', kwargs={'pk': 9999})  # ID inexistente
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
 class KanbanColumnViewSetTest(APITestCase):
-    
+    @classmethod
+    def setUpTestData(cls):
+        # Desconecta o sinal para evitar a criação automática de Kanban ao criar o usuário
+        post_save.disconnect(criar_kanban_ao_criar_usuario, sender=User)
+        # Cria um usuário para autenticar nos testes
+        cls.user = User.objects.create_user(username='testuser', password='testpassword')
+        
+        # Cria uma coluna para testes de atualização
+        cls.kanban_column = KanbanColumn.objects.create(
+            nome="Coluna Teste",
+            meta_dados={"descricao": "Teste de coluna"},
+            prazo_alerta=5,
+            cor_inicial="#FFFFFF",
+            cor_alerta="#FF0000"
+        )
+
     def setUp(self):
-        """Configuração inicial para os testes."""
-        post_save.disconnect(criar_kanban_ao_criar_usuario, sender=Usuario)
-        self.user = User.objects.create_user(username='testuser', password='testpassword')
+        # Autentica o usuário para ser utilizado nos testes
+        self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 
-        # Cria um Kanban para o usuário
-        self.kanban = Kanban.objects.create(nome="Test Kanban", usuario=self.user)
-
-    def test_create_column_with_valid_data(self):
-        """Testa criação de coluna com dados válidos."""
+    def test_create_kanban_column(self):
+        """
+        Testa a criação de uma nova coluna do Kanban.
+        """
         data = {
-            "kanban_id": self.kanban.id,
             "nome": "Nova Coluna",
-            "prazo_alerta": 5,
-            "posicao": 1
-        }
-        response = self.client.post("/api/v1/kanban/columns/", data=data)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIn("coluna", response.data)
-        self.assertEqual(response.data["coluna"]["posicao"], 1)
-
-    def test_create_column_without_position(self):
-        """Testa criação de coluna sem fornecer a posição."""
-        data = {
-            "kanban_id": self.kanban.id,
-            "nome": "Coluna Sem Posição",
             "prazo_alerta": 3
         }
-        response = self.client.post("/api/v1/kanban/columns/", data=data)
+        url = reverse('kanban-column-list')
+        response = self.client.post(url, data)
+        
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["coluna"]["posicao"], 1)
+        self.assertEqual(response.data['nome'], data['nome'])
+        self.assertEqual(response.data['prazo_alerta'], data['prazo_alerta'])
 
-    def test_create_column_with_existing_position(self):
-        """Testa criação de coluna em uma posição existente."""
+    def test_update_nome_ou_prazo(self):
+        """
+        Testa a atualização do nome e do prazo_alerta de uma coluna existente.
+        """
+        data = {
+            "nome": "Coluna Atualizada",
+            "prazo_alerta": 10
+        }
+        url = reverse('kanban-column-atualizar-nome-ou-prazo', args=[self.kanban_column.id])
+        response = self.client.patch(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['nome'], data['nome'])
+        self.assertEqual(response.data['prazo_alerta'], data['prazo_alerta'])
 
-         # Cria uma coluna fictícia
-        column_class = type("TesteColumn", (AbstractKanbanColumn,),  {"__module__": AbstractKanbanColumn.__module__} )
-        coluna = column_class.objects.create(nome="Coluna Teste", prazo_alerta=3)
+    def test_partial_update_nome(self):
+        """
+        Testa a atualização parcial do nome de uma coluna existente.
+        """
+        data = {
+            "nome": "Nome Parcialmente Atualizado"
+        }
+        url = reverse('kanban-column-atualizar-nome-ou-prazo', args=[self.kanban_column.id])
+        response = self.client.patch(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['nome'], data['nome'])
+        self.assertEqual(response.data['prazo_alerta'], self.kanban_column.prazo_alerta)
 
-        # Recupera o ContentType da coluna fictícia
-        coluna_content_type = ContentType.objects.get_for_model(column_class)
-        # Cria uma coluna inicial na posição 1
-        KanbanColumnOrder.objects.create(
-            kanban=self.kanban,
-            coluna_content_type=coluna_content_type, 
-            coluna_object_id=1,
-            posicao=1
-        )
+    def test_partial_update_prazo_alerta(self):
+        """
+        Testa a atualização parcial do prazo_alerta de uma coluna existente.
+        """
+        data = {
+            "prazo_alerta": 15
+        }
+        url = reverse('kanban-column-atualizar-nome-ou-prazo', args=[self.kanban_column.id])
+        response = self.client.patch(url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['prazo_alerta'], data['prazo_alerta'])
+        self.assertEqual(response.data['nome'], self.kanban_column.nome)
+
+
+class KanbanColumnOrderViewSetTest(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        # Desconecta o sinal para evitar a criação automática de Kanban ao criar o usuário
+        post_save.disconnect(criar_kanban_ao_criar_usuario, sender=User)
+        # Cria um usuário para autenticar nos testes
+        cls.user = Usuario.objects.create_user(username='testuser', password='testpassword')
+        # Cria um Kanban para ser utilizado nos testes
+        cls.kanban = Kanban.objects.create(nome="Kanban Teste", descricao="Descrição do Kanban de Teste", usuario=cls.user)
+        # Cria duas colunas para o Kanban
+        cls.kanban_column_1 = KanbanColumn.objects.create(nome="Coluna 1", prazo_alerta=5)
+        cls.kanban_column_2 = KanbanColumn.objects.create(nome="Coluna 2", prazo_alerta=3)
+        # Cria uma ordem inicial de colunas
+        cls.kanban_column_order = KanbanColumnOrder.objects.create(kanban=cls.kanban, coluna=cls.kanban_column_1, posicao=1)
+        # Cria um card para a coluna 1
+        cls.card_1 = KanbanCard.objects.create(lead_nome="Lead 1", descricao="Primeiro Card", coluna=cls.kanban_column_1)
+        # Cria um card para a coluna 1
+        cls.card_2 = KanbanCard.objects.create(lead_nome="Lead 2", descricao="Segundo Card", coluna=cls.kanban_column_1)
+
+    def setUp(self):
+        # Autentica o usuário para ser utilizado nos testes
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_create_kanban_column_order(self):
+        """
+        Testa a criação de uma nova ordem de coluna do Kanban.
+        """
         data = {
             "kanban_id": self.kanban.id,
-            "nome": "Coluna na Mesma Posição",
-            "prazo_alerta": 4,
-            "posicao": 1
+            "coluna_id": self.kanban_column_2.id,
+            "posicao": 2
         }
-        response = self.client.post("/api/v1/kanban/columns/", data=data)
+        url = reverse('kanbancolumnorder-list')
+        response = self.client.post(url, data)
+
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['kanban_id'], data['kanban_id'])
+        self.assertEqual(response.data['coluna_id'], data['coluna_id'])
+        self.assertEqual(response.data['posicao'], data['posicao'])
 
-        # Verifica que as posições foram ajustadas
-        colunas = KanbanColumnOrder.objects.filter(kanban=self.kanban).order_by("posicao")
-        self.assertEqual(colunas.count(), 2)
-        self.assertEqual(colunas[0].posicao, 1)
-        self.assertEqual(colunas[1].posicao, 2)
-
-    def test_missing_required_fields(self):
-        """Testa criação sem campos obrigatórios."""
+    def test_update_kanban_column_order_posicao(self):
+        """
+        Testa a atualização da posição de uma coluna existente no Kanban.
+        """
         data = {
             "kanban_id": self.kanban.id,
-            "nome": "Faltando Prazos"
+            "coluna_id": self.kanban_column_1.id,
+            "posicao": 3
         }
-        response = self.client.post("/api/v1/kanban/columns/", data=data)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("prazo_alerta", response.data["error"])
+        url = reverse('kanbancolumnorder-atualizar-posicao', args=[self.kanban_column_order.id])
+        response = self.client.patch(url, data)
 
-    def test_create_column_for_invalid_kanban(self):
-        """Testa criação para um Kanban inexistente ou não pertencente ao usuário."""
-        data = {
-            "kanban_id": 999,  # Kanban inexistente
-            "nome": "Coluna Inválida",
-            "prazo_alerta": 2
-        }
-        response = self.client.post("/api/v1/kanban/columns/", data=data)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['posicao'], data['posicao'])
 
-    def test_unauthenticated_user_cannot_create_column(self):
-        """Testa que usuários não autenticados não podem criar colunas."""
-        self.client.logout()
-        data = {
-            "kanban_id": self.kanban.id,
-            "nome": "Coluna Sem Login",
-            "prazo_alerta": 3
-        }
-        response = self.client.post("/api/v1/kanban/columns/", data=data)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+    def test_listar_colunas_kanban(self):
+        """
+        Testa a listagem de todas as colunas de um Kanban específico.
+        """
+        url = reverse('kanbancolumnorder-listar-colunas')
+        response = self.client.get(url, {'kanban_id': self.kanban.id})
 
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['kanban_id'], self.kanban.id)
+        self.assertEqual(response.data[0]['coluna_id'], self.kanban_column_1.id)
+        self.assertEqual(response.data[0]['posicao'], self.kanban_column_order.posicao)
+
+    def test_listar_cards(self):
+        """
+        Testa a listagem de todos os cards de uma coluna específica.
+        """
+        url = reverse('kanbancolumnorder-listar-cards', args=[self.kanban_column_order.id])
+        response = self.client.get(url)
+        #print(f'test_listar_cards response {response.data}')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+        self.assertEqual(response.data[0]['lead_nome'], "Lead 1")
+        self.assertEqual(response.data[0]['descricao'], "Primeiro Card")
+
+    def test_listar_cards_sem_cards(self):
+        """
+        Testa a listagem de todos os cards de uma coluna específica quando não há cards.
+        """
+        # Cria uma nova coluna sem cards
+        kanban_column_order_sem_cards = KanbanColumnOrder.objects.create(kanban=self.kanban, coluna=self.kanban_column_2, posicao=2)
+        url = reverse('kanbancolumnorder-listar-cards', args=[kanban_column_order_sem_cards.id])
+        response = self.client.get(url)
+        #print(f'test_listar_cards_sem_cards response.data: {response.data}')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 0)
