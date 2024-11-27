@@ -1,8 +1,10 @@
 from rest_framework import viewsets
 from rest_framework import permissions
+from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from usuario.models import Usuario
 from usuario.serializers import UsuarioSerializer
+from rest_framework.decorators import action
 
 class UsuarioViewSet(viewsets.ModelViewSet):
 
@@ -29,3 +31,9 @@ class UsuarioViewSet(viewsets.ModelViewSet):
             return Usuario.objects.all().order_by('first_name')
         # Usuários comuns só acessam e atualizam seus próprios dados
         return Usuario.objects.filter(id=self.request.user.id).order_by('first_name')
+    
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def me(self, request):
+        serializer = self.get_serializer(request.user)
+        return Response(serializer.data)

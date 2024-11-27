@@ -63,7 +63,7 @@ class KanbanViewSetTest(APITestCase):
         """
         url = reverse('kanban-colunas-e-cards', kwargs={'pk': self.usuario.id})
         response = self.client.get(url)
-        #print(f'test_colunas_e_cards response.data: {response.data}')
+        print(f'test_colunas_e_cards response.data: {response.data}')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         kanban_data = response.data['kanban']

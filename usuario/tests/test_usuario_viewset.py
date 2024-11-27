@@ -1,4 +1,5 @@
 from django.urls import reverse
+from django.contrib.auth.models import Permission
 from rest_framework import status
 from rest_framework.test import APITestCase, APIClient
 from usuario.models import Usuario
@@ -19,6 +20,11 @@ class UsuarioViewSetTest(APITestCase):
 
         self.admin_token = Token.objects.create(user=self.admin_user)
         self.regular_token = Token.objects.create(user=self.regular_user)
+
+        # Adicionando permissões ao usuário regular
+        permission = Permission.objects.get(codename='change_usuario')  # Certifique-se de que 'change_usuario' existe
+        self.regular_user.user_permissions.add(permission)
+        self.regular_user.save()
 
     def authenticate_as(self, user_type='regular'):
         """Autentica o cliente como admin ou usuário regular forçando a autenticação."""
@@ -98,3 +104,26 @@ class UsuarioViewSetTest(APITestCase):
         permissoes = response.data.get('permissoes', [])
         self.assertIsInstance(permissoes, list)
         self.assertIn('usuario.add_usuario', permissoes)  # Exemplo de permissão para admin
+
+
+    def test_me_endpoint(self):
+        """Testa o endpoint 'me' para retornar os dados do usuário autenticado."""
+        # Autenticar como usuário regular
+        self.authenticate_as('regular')
+        
+        url = reverse('usuario-me')  # Gera a URL para o endpoint 'me'
+        response = self.client.get(url)
+
+        #print(f'test_me_endpoint response.data: {response.data}')
+
+        # Verificações de resposta
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['username'], 'regularuser')
+        self.assertEqual(response.data['email'], 'regular@example.com')
+        self.assertIn('permissoes', response.data)  # Verifica se o campo 'permissoes' está presente
+
+        # Verificar se as permissões estão corretas
+        permissoes = response.data.get('permissoes', [])
+        self.assertIsInstance(permissoes, list)
+        self.assertIn('usuario.change_usuario', permissoes)  # Ajuste para verificar permissões específicas
+

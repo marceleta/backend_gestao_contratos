@@ -194,6 +194,3 @@ class KanbanColumnOrderViewSet(viewsets.ViewSet):
         cards = KanbanCard.objects.filter(coluna=coluna.coluna)
         serializer = KanbanCardSerializer(cards, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
-    
-
