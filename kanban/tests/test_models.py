@@ -269,53 +269,71 @@ class KanbanColumnOrderModelTest(TestCase):
         cls.kanban = Kanban.objects.create(usuario=cls.usuario)
         cls.coluna1 = KanbanColumn.objects.create(nome="Contato Inicial")
         cls.coluna2 = KanbanColumn.objects.create(nome="Visita ao Imóvel")
+        cls.coluna3 = KanbanColumn.objects.create(nome="Negociação")
+
+
+    def setUp(self):
+        # Cada teste deve ter colunas ordenadas para garantir a consistência dos dados
+        KanbanColumnOrder.objects.create(kanban=self.kanban, coluna=self.coluna1, posicao=1)
+        KanbanColumnOrder.objects.create(kanban=self.kanban, coluna=self.coluna2, posicao=2)
+        KanbanColumnOrder.objects.create(kanban=self.kanban, coluna=self.coluna3, posicao=3)
+
 
     def test_criar_kanban_column_order(self):
         """
         Testa a criação de uma `KanbanColumnOrder` associada a um Kanban.
         """
-        column_order = KanbanColumnOrder.objects.create(
+        # Criação inicial da ordem de colunas (verifica se já existe para evitar duplicação)
+        column_order, created = KanbanColumnOrder.objects.get_or_create(
             kanban=self.kanban,
             coluna=self.coluna1,
-            posicao=1
+            defaults={'posicao': 1}
         )
+        #print(f'created: {created}')
 
+        # Verifica se a instância foi criada
+        self.assertFalse(created, "A coluna já existia e não foi criada novamente.")
+
+        # Verifica os valores dos atributos
         self.assertEqual(column_order.kanban, self.kanban)
         self.assertEqual(column_order.coluna, self.coluna1)
         self.assertEqual(column_order.posicao, 1)
+
 
     def test_posicao_ajustada_automaticamente(self):
         """
         Testa se as posições das colunas são ajustadas automaticamente ao inserir
         uma nova coluna na mesma posição.
         """
-        KanbanColumnOrder.objects.create(kanban=self.kanban, coluna=self.coluna1, posicao=1)
-        KanbanColumnOrder.associar_coluna(kanban=self.kanban, coluna=self.coluna2, posicao=1)
+        # Inicialmente temos 3 colunas criadas com as posições 1, 2 e 3
+        # Vamos adicionar uma nova coluna, `coluna4`, na posição 1
+        nova_coluna = KanbanColumn.objects.create(nome="Nova Coluna Ajustada")
 
+        # Utilizando o método `adicionar_e_reordenar` para associar a nova coluna na posição 1
+        KanbanColumnOrder.adicionar_e_reordenar(kanban=self.kanban, coluna=nova_coluna, posicao=1)
+
+        # Recupera as colunas ordenadas por posição para verificação
         colunas = KanbanColumnOrder.objects.filter(kanban=self.kanban).order_by("posicao")
-        #print(f'test_posicao_ajustada_automaticamente colunas {colunas}')
-       
-        self.assertEqual(colunas[0].coluna, self.coluna2)  # Nova coluna deve ocupar a posição 1
+
+        # Verifica se a nova coluna foi adicionada corretamente
+        self.assertEqual(colunas[0].coluna, nova_coluna)  # Nova coluna deve ocupar a posição 1
         self.assertEqual(colunas[1].coluna, self.coluna1)  # Coluna original deve ser movida para posição 2
+        self.assertEqual(colunas[2].coluna, self.coluna2)  # Coluna original deve ser movida para posição 3
+        self.assertEqual(colunas[3].coluna, self.coluna3)  # Coluna original deve ser movida para posição 4
 
 
-    def test_associar_coluna(self):
+
+    def test_adicionar_e_reordenar(self):
         """
         Testa o método estático `associar_coluna` para criar e associar uma nova coluna
         ao Kanban e ajustar sua posição.
         """
-        # Criação inicial de uma coluna com posição 1
-        KanbanColumnOrder.objects.create(
-            kanban=self.kanban,
-            coluna=self.coluna1,
-            posicao=1
-        )
 
         # Criação de uma nova coluna
         nova_coluna = KanbanColumn.objects.create(nome="Documentação e Análise de Crédito")
 
         # Utilizando o método estático para associar a nova coluna na posição 2
-        KanbanColumnOrder.associar_coluna(kanban=self.kanban, coluna=nova_coluna, posicao=2)
+        KanbanColumnOrder.adicionar_e_reordenar(kanban=self.kanban, coluna=nova_coluna, posicao=2)
 
         # Recupera as colunas ordenadas por posição para verificação
         colunas = KanbanColumnOrder.objects.filter(kanban=self.kanban).order_by("posicao")
@@ -329,12 +347,76 @@ class KanbanColumnOrderModelTest(TestCase):
         """
         Testa se as colunas de um Kanban estão sendo ordenadas corretamente.
         """
-        KanbanColumnOrder.objects.create(kanban=self.kanban, coluna=self.coluna2, posicao=2)
-        KanbanColumnOrder.objects.create(kanban=self.kanban, coluna=self.coluna1, posicao=1)
+        # Criação de uma nova coluna e associação ao kanban
+        coluna4 = KanbanColumn.objects.create(nome="Nova Coluna")
+        
+        # Utilizando o método `adicionar_e_reordenar` para adicionar a coluna4 na posição 2
+        KanbanColumnOrder.adicionar_e_reordenar(kanban=self.kanban, coluna=coluna4, posicao=2)
 
+        # Recupera as colunas ordenadas por posição para verificação
         colunas_ordenadas = KanbanColumnOrder.objects.filter(kanban=self.kanban).order_by("posicao")
-        self.assertEqual(colunas_ordenadas[0].coluna, self.coluna1)
-        self.assertEqual(colunas_ordenadas[1].coluna, self.coluna2)
+
+        # Verifica se as colunas estão ordenadas corretamente
+        self.assertEqual(colunas_ordenadas[0].coluna, self.coluna1)  # A coluna original 1 deve permanecer na posição 1
+        self.assertEqual(colunas_ordenadas[1].coluna, coluna4)       # Nova coluna deve ocupar a posição 2
+        self.assertEqual(colunas_ordenadas[2].coluna, self.coluna2)  # Coluna2 deve mover para a posição 3
+        self.assertEqual(colunas_ordenadas[3].coluna, self.coluna3)  # Coluna3 deve mover para a posição 4
+
+
+    
+    def test_remover_coluna_com_cards(self):
+        """
+        Testa a tentativa de remover uma coluna que possui cards.
+        Deve levantar um ValidationError.
+        """
+        # Criação de um card associado à coluna2
+        KanbanCard.objects.create(lead_nome="Lead Teste", descricao="Descrição do lead", coluna=self.coluna2)
+
+        # Tentativa de remover a coluna com cards deve resultar em um ValidationError
+        with self.assertRaises(ValidationError) as context:
+            KanbanColumnOrder.remover_coluna(kanban=self.kanban, coluna=self.coluna2)
+
+        # Extrair a mensagem do ValidationError para comparação
+        mensagens_de_erro = context.exception.messages
+        self.assertIn(
+            "Existem cards associados a esta coluna. Remova ou mova os cards antes de excluir a coluna.",
+            mensagens_de_erro
+        )
+
+        # Verifica se a coluna e os cards ainda existem
+        self.assertTrue(KanbanColumn.objects.filter(pk=self.coluna2.pk).exists())
+        self.assertTrue(KanbanCard.objects.filter(coluna=self.coluna2).exists())
+
+
+    def test_remover_coluna_sem_cards(self):
+        """
+        Testa a remoção de uma coluna que não possui cards.
+        """
+        # Obtém a quantidade inicial de colunas e ordens de colunas
+        coluna_order_count = KanbanColumnOrder.objects.filter(kanban=self.kanban).count()
+        coluna_count = KanbanColumn.objects.count()
+
+        # Remove a coluna que não possui cards
+        KanbanColumnOrder.remover_coluna(kanban=self.kanban, coluna=self.coluna2)
+
+        # Verifica se a quantidade de KanbanColumnOrder diminuiu em 1
+        self.assertEqual(
+            KanbanColumnOrder.objects.filter(kanban=self.kanban).count(),
+            coluna_order_count - 1
+        )
+
+        # Verifica se a quantidade de KanbanColumn diminuiu em 1
+        self.assertEqual(
+            KanbanColumn.objects.count(),
+            coluna_count - 1
+        )
+
+
+
+    def tearDown(self):
+        # Limpa as alterações realizadas em cada teste para que não interfiram nos demais testes
+        KanbanColumnOrder.objects.filter(kanban=self.kanban).delete()
+        KanbanCard.objects.all().delete()
 
 
 

@@ -45,34 +45,29 @@ class KanbanViewSet(viewsets.ViewSet):
         cards = KanbanCard.objects.filter(coluna__in=[coluna.coluna for coluna in colunas])
 
         # Monta a resposta com informações do Kanban, colunas e cards
-        #print(f'KanbanSerializer(kanban).data[kanban]: {KanbanSerializer(kanban).data}')
         response_data = {
             "kanban": {
-                'id': KanbanSerializer(kanban).data['id'],
-                'nome': KanbanSerializer(kanban).data['nome'],
-                'descricao': KanbanSerializer(kanban).data['descricao'],
-                'ultima_atualizacao': KanbanSerializer(kanban).data['ultima_atualizacao'],
-
+                "id": kanban.id,
+                "nome": kanban.nome,
+                "descricao": kanban.descricao,
+                "ultima_atualizacao": kanban.ultima_atualizacao,
             },
-            
             "colunas": [
                 {
-                    "coluna": {
-                        "id": coluna.coluna.id,
-                        "nome": coluna.coluna.nome,
-                        "posicao": coluna.posicao,
-                        "cards": [
-                            {
-                                "id": card.id,
-                                "lead_nome": card.lead_nome,
-                                "descricao": card.descricao,
-                                "data_prazo": card.data_prazo,
-                                "cor_atual": card.cor_atual
-                            }
-                            for card in cards if card.coluna.id == coluna.coluna.id
+                    "id": coluna.coluna.id,
+                    "nome": coluna.coluna.nome,
+                    "posicao": coluna.posicao,
+                    "prazo_alerta": coluna.coluna.prazo_alerta,
+                    "cards": [
+                        {
+                            "id": card.id,
+                            "lead_nome": card.lead_nome,
+                            "descricao": card.descricao,
+                            "data_prazo": card.data_prazo,
+                            "cor_atual": card.cor_atual
+                        }
+                        for card in cards if card.coluna.id == coluna.coluna.id
                     ]
-                    },
-                    
                 }
                 for coluna in colunas
             ]
@@ -94,6 +89,9 @@ class KanbanColumnViewSet(viewsets.ModelViewSet):
         Cria uma nova coluna do Kanban.
         Os campos exigidos são `nome` e `prazo_alerta`.
         """
+
+        #print(f'prazo_alerta: {request.data.get('prazo_alerta')}')
+
         # Somente `nome` e `prazo_alerta` são requeridos na criação
         data = {
             'nome': request.data.get('nome'),
@@ -124,6 +122,9 @@ class KanbanColumnViewSet(viewsets.ModelViewSet):
         self.perform_update(serializer)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
 
 
 class KanbanColumnOrderViewSet(viewsets.ViewSet):
@@ -194,3 +195,81 @@ class KanbanColumnOrderViewSet(viewsets.ViewSet):
         cards = KanbanCard.objects.filter(coluna=coluna.coluna)
         serializer = KanbanCardSerializer(cards, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'])
+    def criar_coluna_e_ordem(self, request):
+        #import pdb
+        #pdb.set_trace()
+        """
+        Cria uma nova coluna e depois cria a ordem da coluna no Kanban.
+        Recebe o Nome da coluna, prazo de alerta, posição e ID do Kanban.
+        """
+        kanban_id = int(request.data.get('kanban_id'))
+        nome_coluna = request.data.get('nome')
+        prazo_alerta = int(request.data.get('prazo_alerta'))
+        posicao = int(request.data.get('posicao'))
+        
+        # Verifica se os dados necessários foram fornecidos
+        if not kanban_id or not nome_coluna or not prazo_alerta or not posicao:
+            return Response({'error': 'Todos os campos são obrigatórios.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Persistindo a nova coluna
+        coluna_data = {
+            'nome': nome_coluna,
+            'prazo_alerta': prazo_alerta,
+        }
+        coluna_serializer = KanbanColumnSerializer(data=coluna_data)
+        #coluna_serializer.is_valid(raise_exception=True)
+        #coluna = coluna_serializer.save()
+        if not coluna_serializer.is_valid():
+            print("Erros do serializer de KanbanColumn:", coluna_serializer.errors)
+            return Response(
+                {'error': 'Erro ao validar os dados da coluna.', 'detalhes': coluna_serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        coluna = coluna_serializer.save()
+
+        # Criando a ordem da coluna no Kanban
+        kanban_column_order_data = {
+            'kanban_id': kanban_id,
+            'coluna_id': coluna.id,
+            'posicao': posicao,
+        }
+        kanban_column_order_serializer = KanbanColumnOrderSerializer(data=kanban_column_order_data)
+        kanban_column_order_serializer.is_valid(raise_exception=True)
+        kanban_column_order = kanban_column_order_serializer.save()
+
+        # Retornando os dados das duas operações
+        return Response({
+            'coluna': coluna_serializer.data,
+            'posicao': kanban_column_order_serializer.data['posicao'],
+        }, status=status.HTTP_201_CREATED)
+    
+
+    @action(detail=True, methods=['delete'])
+    def remover_coluna(self, request, pk=None):
+        """
+        Remove uma coluna específica do Kanban.
+        Primeiro verifica se existem cards na coluna, e se houver, avisa o usuário que eles devem ser removidos ou movidos.
+        """
+        # Obtendo a instância de KanbanColumnOrder correspondente
+        kanban_column = get_object_or_404(KanbanColumn, pk=pk)
+
+        kanban_column_order = KanbanColumnOrder.objects.get(coluna=kanban_column)
+
+        #print(f'remover_coluna pk: {pk}')
+
+        # Verificando se há cards associados à coluna
+        cards = KanbanCard.objects.filter(coluna=kanban_column_order.coluna)
+        if cards.exists():
+            return Response(
+                {'error': 'Existem cards nessa coluna. Remova ou mova os cards antes de excluir a coluna.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Se não houver cards, deletar KanbanColumnOrder e KanbanColumn
+        KanbanColumnOrder.remover_coluna(kanban=kanban_column_order.kanban, coluna=kanban_column)
+       
+
+        return Response({'message': 'Coluna removida com sucesso.'}, status=status.HTTP_204_NO_CONTENT)

@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.db import models
 from django.db.models import F, Max
+from imovel.models import Imovel
 
 
 
@@ -54,13 +55,42 @@ class KanbanCard(models.Model):
     data_prazo = models.DateTimeField(null=True, blank=True)
     cor_atual = models.CharField(max_length=7, default='#00FF00')  # Cor inicial (verde)
     dados_adicionais = models.JSONField(default=dict, blank=True, help_text="Campo para dados dinâmicos adicionais")
-    
+    contato = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Informações de contato do lead, como telefone, WhatsApp, e e-mail",
+        null=True,
+    )
+
+    # Campos específicos para cada coluna
+    data_visita = models.DateTimeField(null=True, blank=True, help_text="Data e hora da visita agendada")
+    observacoes_visita = models.TextField(blank=True, help_text="Observações sobre a visita")
+    valor_final = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Valor final da negociação")
+    tipo_garantia = models.CharField(max_length=100, blank=True, help_text="Tipo de garantia")
+    prazo_vigencia = models.CharField(max_length=100, blank=True, help_text="Prazo de vigência do contrato")
+    metodo_pagamento = models.CharField(max_length=100, blank=True, help_text="Método de pagamento")
+    documentos_anexados = models.TextField(blank=True, help_text="Documentos anexados para análise")
+    status_documentacao = models.CharField(max_length=100, blank=True, help_text="Status da documentação")
+    resultado_analise_credito = models.CharField(max_length=100, blank=True, help_text="Resultado da análise de crédito")
+    data_assinatura = models.DateTimeField(null=True, blank=True, help_text="Data da assinatura do contrato")
+    contrato_assinado = models.TextField(blank=True, help_text="Contrato assinado anexado")
+
+
     # Campos necessários para associar a uma coluna do Kanban
     coluna = models.ForeignKey(
         KanbanColumn,
         on_delete=models.CASCADE,
         related_name="cards",
         help_text="Coluna do Kanban à qual este card está associado"
+    )
+
+    imovel = models.ForeignKey(
+        Imovel,
+        on_delete=models.CASCADE,
+        related_name='imovel',
+        help_text="Imovel que o contato está interessado",
+        null=True,
+        blank=True
     )
 
     def validar_e_associar_coluna(self, coluna):
@@ -89,6 +119,7 @@ class KanbanCard(models.Model):
         return f"Lead: {self.lead_nome} na Coluna: {self.coluna.nome}"
 
 
+
 class Kanban(models.Model):
     nome = models.CharField(max_length=100, help_text="Nome do Kanban")
     descricao = models.TextField(blank=True, null=True, help_text="Descrição do Kanban")
@@ -111,7 +142,7 @@ class KanbanColumnOrder(models.Model):
         
 
     @staticmethod
-    def associar_coluna(kanban, coluna, posicao):
+    def adicionar_e_reordenar(kanban, coluna, posicao):
         """
         Associa uma nova coluna ao Kanban ou ajusta a posição de uma coluna existente.
         """
@@ -140,6 +171,38 @@ class KanbanColumnOrder(models.Model):
             defaults={'posicao': posicao}
         )
         return column_order
+    
+    @staticmethod
+    def remover_coluna(kanban, coluna):
+        #import pdb
+        #pdb.set_trace()
+
+        """
+        Remove uma coluna específica do Kanban e ajusta as posições das colunas restantes.
+        """
+        try:
+            # Obter a instância de KanbanColumnOrder para a coluna
+            coluna_order = KanbanColumnOrder.objects.get(kanban=kanban, coluna=coluna)
+        except KanbanColumnOrder.DoesNotExist:
+            raise ValidationError("A coluna especificada não está associada a este Kanban.")
+
+        # Verificar se a coluna possui cards
+        if KanbanCard.objects.filter(coluna=coluna).exists():
+            raise ValidationError("Existem cards associados a esta coluna. Remova ou mova os cards antes de excluir a coluna.")
+
+        # Deletar a coluna e a ordem
+        coluna_order.delete()
+        coluna.delete()
+
+        # Reordenar as colunas restantes
+        colunas_restantes = KanbanColumnOrder.objects.filter(kanban=kanban).order_by('posicao')
+        for index, coluna_order in enumerate(colunas_restantes):
+            coluna_order.posicao = index + 1  # Reatribuir posição de forma sequencial
+        
+        # Salvar em um único comando para melhorar desempenho
+        KanbanColumnOrder.objects.bulk_update(colunas_restantes, ['posicao'])
+
+        return True
 
 
     

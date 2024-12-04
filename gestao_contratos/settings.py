@@ -64,7 +64,8 @@ INSTALLED_APPS = [
     'usuario',
     'imovel',
     'documentacao',
-    'kanban'
+    'kanban',
+    'contrato'
 ]
 
 MIDDLEWARE = [

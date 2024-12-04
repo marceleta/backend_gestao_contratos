@@ -61,16 +61,24 @@ class KanbanColumnOrderSerializer(serializers.ModelSerializer):
         # Extraímos `kanban` e `coluna` dos dados validados
         kanban = validated_data.pop('kanban')
         coluna = validated_data.pop('coluna')
+        posicao = validated_data.pop('posicao')
         # Criamos a instância usando esses dados
-        return KanbanColumnOrder.objects.create(kanban=kanban, coluna=coluna, **validated_data)
+        return KanbanColumnOrder.adicionar_e_reordenar(kanban=kanban, coluna=coluna, posicao=posicao)
 
     def update(self, instance, validated_data):
-        # Extraímos `kanban` e `coluna` dos dados validados se eles existirem
-        instance.kanban = validated_data.get('kanban', instance.kanban)
-        instance.coluna = validated_data.get('coluna', instance.coluna)
-        instance.posicao = validated_data.get('posicao', instance.posicao)
-        instance.save()
-        return instance
+        # Extraímos os dados validados
+        kanban = validated_data.get('kanban', instance.kanban)
+        coluna = validated_data.get('coluna', instance.coluna)
+        posicao = validated_data.get('posicao', instance.posicao)
+        
+        # Usamos o método associar_coluna para atualizar a instância
+        updated_instance = KanbanColumnOrder.adicionar_e_reordenar(
+            kanban=kanban,
+            coluna=coluna,
+            posicao=posicao
+        )
+        return updated_instance
+
 
 
 class KanbanSerializer(serializers.ModelSerializer):
