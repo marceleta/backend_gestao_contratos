@@ -34,17 +34,32 @@ class Telefone(models.Model):
 
     def __str__(self):
         return f"{self.numero} ({self.tipo})"
+    
+
+class Endereco(models.Model):
+    """
+    Representa um endereço que pode estar associado a diferentes tipos de entidades.
+    """
+    tipo_endereco = models.CharField(max_length=50, null=True, blank=True)
+    rua = models.CharField(max_length=255)
+    numero = models.CharField(max_length=50)
+    bairro = models.CharField(max_length=100)
+    cidade = models.CharField(max_length=100)
+    estado = models.ForeignKey(Estado, on_delete=models.PROTECT)
+    cep = models.CharField(max_length=10)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    def __str__(self):
+        return f"{self.rua}, {self.numero} - {self.bairro}, {self.cidade}"
 
 
 class Pessoa(models.Model):
     nome = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
-    telefone = models.CharField(max_length=20)
-    endereco = models.CharField(max_length=255)
-    bairro = models.CharField(max_length=100)
-    cidade = models.CharField(max_length=100)
-    estado = models.ForeignKey(Estado, on_delete=models.PROTECT)
-    cep = models.CharField(max_length=10)
     preferencia_comunicacao = models.CharField(
         max_length=50,
         choices=[('Email', 'Email'), ('Telefone', 'Telefone'), ('WhatsApp', 'WhatsApp')],
@@ -71,7 +86,14 @@ class PessoaFisica(Pessoa):
     )
     nacionalidade = models.CharField(max_length=100)
     profissao = models.CharField(max_length=100, null=True, blank=True)
+    sexo = models.CharField(
+        max_length=10,
+        choices=[('Masculino', 'Masculino'), ('Feminino', 'Feminino'), ('Outro', 'Outro')],
+        null=True, blank=True
+    )
     telefones = GenericRelation(Telefone)
+    enderecos = GenericRelation(Endereco)
+
 
     def __str__(self):
         return f"{self.nome} (Pessoa Física)"
@@ -86,6 +108,7 @@ class PessoaJuridica(Pessoa):
     natureza_juridica = models.CharField(max_length=100, null=True, blank=True)
     atividade_principal_cnae = models.CharField(max_length=100, null=True, blank=True)
     telefones = GenericRelation(Telefone)
+    enderecos = GenericRelation(Endereco)
 
     def __str__(self):
         return f"{self.nome_fantasia or self.nome} (Pessoa Jurídica)"
